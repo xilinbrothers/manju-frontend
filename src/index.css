@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* 用户提供的侧边栏样式（在此作为全局组件复用） */
+  .sidebar-link {
+    @apply flex items-center px-4 py-2 rounded-md text-sm font-medium text-gray-400 hover:bg-[#1e293b] hover:text-white cursor-pointer transition-colors duration-200;
+  }
+  
+  .sidebar-active,
+  .sidebar-link-active {
+    @apply bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-900/20;
+  }
+
+  /* 隐藏滚动条 */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* 自定义输入框阴影 */
+  .shadow-inner {
+    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+  }
+}
+
+body {
+  @apply bg-[#0F172A] text-white;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}

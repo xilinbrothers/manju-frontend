@@ -1,0 +1,297 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import WelcomePage from './pages/WelcomePage';
+import SeriesListPage from './pages/SeriesListPage';
+import PlansPage from './pages/PlansPage';
+import MySubscriptionsPage from './pages/MySubscriptionsPage';
+import AdminApp from './admin/AdminApp';
+import { getTranslation } from './utils/i18n';
+
+const App = () => {
+  const [currentPage, setCurrentPage] = useState('welcome');
+  const [selectedSeries, setSelectedSeries] = useState(null);
+  const [selectedPlan, setSelectedPlan] = useState(null);
+
+  // 多语言支持
+  const lang = useMemo(() => {
+    if (window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code === 'en') return 'en';
+    return 'zh';
+  }, []);
+  const t = getTranslation(lang);
+
+  // 模拟 Telegram Web App 样式初始化
+  useEffect(() => {
+    // 1. 通知 Telegram SDK 已就绪
+    if (window.Telegram?.WebApp) {
+      const tg = window.Telegram.WebApp;
+      tg.ready();
+      tg.expand(); // 展开 Web App 以占据全屏
+      
+      // 设置头部颜色
+      tg.setHeaderColor('#0F172A');
+      // 设置主按钮状态 (可选)
+      tg.MainButton.setParams({
+        text: '确认支付',
+        color: '#2563eb'
+      });
+    }
+
+    document.body.style.backgroundColor = '#0F172A';
+    document.body.style.color = '#FFFFFF';
+    document.body.style.margin = '0';
+    document.body.style.fontFamily = 'Inter, -apple-system, sans-serif';
+  }, []);
+
+  // 处理 Telegram SDK 交互按钮 (MainButton / BackButton)
+  useEffect(() => {
+    if (!window.Telegram?.WebApp) return;
+    const tg = window.Telegram.WebApp;
+
+    // 1. 处理返回按钮
+    if (currentPage === 'welcome') {
+      tg.BackButton.hide();
+    } else {
+      tg.BackButton.show();
+      const handleBack = () => {
+        if (currentPage === 'series') navigate('welcome');
+        else if (currentPage === 'plans') navigate('series');
+        else if (currentPage === 'payment') navigate('plans');
+        else navigate('welcome');
+      };
+      tg.onEvent('backButtonClicked', handleBack);
+      return () => tg.offEvent('backButtonClicked', handleBack);
+    }
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (!window.Telegram?.WebApp) return;
+    const tg = window.Telegram.WebApp;
+
+    // 2. 处理主按钮 (仅在支付页显示)
+    if (currentPage === 'payment') {
+      tg.MainButton.setParams({
+        text: `确认支付 ￥${selectedPlan?.price || '69.9'}`,
+        color: '#3B82F6',
+        is_visible: true
+      });
+      const handleMainClick = () => navigate('success');
+      tg.onEvent('mainButtonClicked', handleMainClick);
+      return () => {
+        tg.offEvent('mainButtonClicked', handleMainClick);
+        tg.MainButton.hide();
+      };
+    } else {
+      tg.MainButton.hide();
+    }
+  }, [currentPage, selectedPlan]);
+
+  const navigate = (page) => {
+    setCurrentPage(page);
+    window.scrollTo(0, 0); // 每次跳转滚动到顶部
+  };
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'welcome':
+        return <WelcomePage onNavigate={navigate} t={t} />;
+      case 'series':
+        return (
+          <SeriesListPage 
+            onNavigate={navigate} 
+            onSelectSeries={setSelectedSeries} 
+            t={t}
+          />
+        );
+      case 'plans':
+        return (
+          <PlansPage 
+            series={selectedSeries} 
+            onSelectPlan={setSelectedPlan} 
+            onNavigate={navigate} 
+            t={t}
+          />
+        );
+      case 'payment':
+        return (
+          <div className="flex flex-col min-h-screen bg-[#0F172A] text-white p-5">
+            <h2 className="text-[20px] font-black mb-8 px-1">{t.order_confirm}</h2>
+            
+            <div className="bg-[#1A2333] rounded-3xl p-6 mb-6 border border-gray-800/50 space-y-5 shadow-xl">
+              <div className="flex justify-between items-center text-[14px]">
+                <span className="text-gray-400">{t.sub_series}</span>
+                <span className="font-bold">{selectedSeries?.title || 'Series Name'}</span>
+              </div>
+              <div className="flex justify-between items-center text-[14px]">
+                <span className="text-gray-400">{t.sub_duration}</span>
+                <span className="font-bold">{selectedPlan?.label || '30 days'}</span>
+              </div>
+              <div className="border-t border-gray-800/50 pt-4 flex justify-between items-center">
+                <span className="text-gray-400 text-[14px]">{t.order_amount}</span>
+                <span className="text-[22px] font-black font-mono text-white">￥{selectedPlan?.price || '69.9'}</span>
+              </div>
+            </div>
+
+            <div className="bg-green-500/10 rounded-2xl p-4 flex items-center space-x-3 border border-green-500/20 mb-8">
+              <span className="text-green-500 text-lg">🛡️</span>
+              <p className="text-[12px] text-green-500 font-medium">{t.pay_security}</p>
+            </div>
+
+            <h4 className="text-[15px] font-bold mb-5 px-1">{t.select_pay_method}</h4>
+
+            <div className="flex flex-col space-y-3.5 mb-24">
+              <button 
+                onClick={() => navigate('success')}
+                className="w-full p-5 bg-[#1A2333] hover:bg-[#252D3F] rounded-3xl border border-gray-800 flex items-center group transition-all"
+              >
+                <div className="w-12 h-12 bg-blue-500 rounded-2xl flex items-center justify-center mr-4 shadow-lg shadow-blue-500/20">
+                  <img src="https://telegram.org/img/t_logo.svg" className="w-6 h-6" alt="TG" />
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="text-[15px] font-bold">Telegram Stars</div>
+                  <div className="text-[11px] text-gray-500">Official, Instant</div>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => navigate('success')}
+                className="w-full p-5 bg-[#1A2333] hover:bg-[#252D3F] rounded-3xl border border-gray-800 flex items-center group transition-all"
+              >
+                <div className="w-12 h-12 bg-green-500 rounded-2xl flex items-center justify-center mr-4 shadow-lg shadow-green-500/20">
+                  <span className="text-white font-bold">₿</span>
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="text-[15px] font-bold">USDT (TRC20)</div>
+                  <div className="text-[11px] text-gray-500">Crypto Payment</div>
+                </div>
+              </button>
+              
+              <button 
+                onClick={() => navigate('success')}
+                className="w-full p-5 bg-[#1A2333] hover:bg-[#252D3F] rounded-3xl border border-gray-800 flex items-center group transition-all"
+              >
+                <div className="w-12 h-12 bg-[#1677FF] rounded-2xl flex items-center justify-center mr-4 shadow-lg shadow-blue-500/20">
+                  <img src="https://gw.alipayobjects.com/zos/rmsportal/nxpXpSpxvQpXpXp.png" className="w-6 h-6" alt="Alipay" />
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="text-[15px] font-bold">Alipay</div>
+                  <div className="text-[11px] text-gray-500">Fast & Secure</div>
+                </div>
+              </button>
+            </div>
+            
+            {/* 已移除页面底部的固定确认按钮，改用 Telegram 原生 MainButton */}
+          </div>
+        );
+      case 'success':
+        return (
+          <div className="flex flex-col min-h-screen bg-[#0F172A] p-5 text-center items-center">
+            <div className="mt-12 mb-10 relative">
+              <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(34,197,94,0.3)] animate-in zoom-in duration-500">
+                <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"></path>
+                </svg>
+              </div>
+            </div>
+
+            <h2 className="text-[24px] font-black text-white mb-2">{t.pay_success}</h2>
+            <p className="text-gray-400 text-[14px] mb-10">{t.sub_active}</p>
+
+            <div className="w-full bg-[#1A2333] rounded-3xl p-6 mb-8 border border-gray-800/50 text-left shadow-xl">
+              <div className="flex items-center space-x-2 mb-6">
+                <span className="text-orange-400">👑</span>
+                <span className="text-[15px] font-bold text-white">{t.benefits}</span>
+              </div>
+              
+              <div className="space-y-6">
+                <div className="flex items-start space-x-4">
+                  <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <span className="text-blue-500 text-lg">📅</span>
+                  </div>
+                  <div>
+                    <div className="text-[14px] font-bold text-white">{t.valid_until}</div>
+                    <div className="text-[12px] text-gray-400 mt-0.5">2026-06-14 23:59</div>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-4">
+                  <div className="w-10 h-10 bg-purple-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <span className="text-purple-500 text-lg">👥</span>
+                  </div>
+                  <div>
+                    <div className="text-[14px] font-bold text-white">{t.vip_group}</div>
+                    <div className="text-[12px] text-gray-400 mt-0.5">{selectedSeries?.title} VIP Group</div>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-4">
+                  <div className="w-10 h-10 bg-green-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <span className="text-green-500 text-lg">✓</span>
+                  </div>
+                  <div>
+                    <div className="text-[14px] font-bold text-white">{t.full_unlock}</div>
+                    <div className="text-[12px] text-gray-400 mt-0.5">{t.hd_no_ads}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="w-full flex flex-col space-y-3.5 pb-10">
+              <button className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white text-[16px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2">
+                <span>🚀</span>
+                <span>{t.enter_group}</span>
+              </button>
+              <button 
+                onClick={() => navigate('welcome')}
+                className="w-full py-4.5 bg-transparent hover:bg-white/5 text-gray-300 text-[16px] font-bold rounded-full transition-all border border-gray-800/50"
+              >
+                {t.back_home}
+              </button>
+            </div>
+          </div>
+        );
+      case 'my-subs':
+        return <MySubscriptionsPage onNavigate={navigate} />;
+      case 'service':
+        return (
+          <div className="flex flex-col min-h-screen bg-[#0F172A] text-white p-6 items-center justify-center text-center">
+            <div className="w-24 h-24 bg-[#1A2333] rounded-full flex items-center justify-center mb-8 shadow-2xl border border-gray-800/50">
+              <div className="text-4xl">💬</div>
+            </div>
+            <h3 className="text-[20px] font-bold mb-4">联系客服</h3>
+            <p className="text-gray-400 text-[14px] max-w-[240px] leading-relaxed mb-10">
+              遇到支付、进群或其他问题？<br/>
+              点击下方按钮联系我们的人工客服，我们将为您提供 1对1 服务。
+            </p>
+            <button 
+              className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2"
+              onClick={() => window.open('https://t.me/your_support_account', '_blank')}
+            >
+              <span>👤</span>
+              <span>联系人工客服</span>
+            </button>
+            
+            <button 
+              onClick={() => navigate('welcome')}
+              className="mt-6 text-gray-500 text-[14px] hover:text-white transition-colors"
+            >
+              返回首页
+            </button>
+          </div>
+        );
+      default:
+        return <WelcomePage onNavigate={navigate} />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0F172A] relative overflow-x-hidden">
+      {/* 状态栏占位 */}
+      <div className="h-6 w-full"></div>
+      {/* 页面内容 */}
+      <div className="pb-12">
+        {renderPage()}
+      </div>
+    </div>
+  );
+};
+
+export default App;
