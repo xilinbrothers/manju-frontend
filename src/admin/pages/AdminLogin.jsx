@@ -23,7 +23,7 @@ const AdminLogin = ({ onLoginSuccess }) => {
         
         // 模拟后端校验邮箱白名单逻辑
         // TODO: 这里应调用后端 API 检查该邮箱是否在管理员列表中
-        const allowedAdmins = ['admin@example.com', 'dev@company.com']; 
+        const allowedAdmins = ['admin@example.com', 'dev@company.com', 'xilinbrothers@gmail.com']; 
         
         if (allowedAdmins.includes(userInfo.email)) {
           onLoginSuccess({

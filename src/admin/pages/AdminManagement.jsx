@@ -4,6 +4,7 @@ const AdminManagement = () => {
   const [admins, setAdmins] = useState([
     { id: 1, name: 'Super Admin', email: 'admin@example.com', role: '所有者', addedAt: '2026-03-01' },
     { id: 2, name: 'Developer', email: 'dev@company.com', role: '管理员', addedAt: '2026-03-10' },
+    { id: 3, name: 'xilinbrothers', email: 'xilinbrothers@gmail.com', role: '管理员', addedAt: '2026-03-16' },
   ]);
 
   return (
