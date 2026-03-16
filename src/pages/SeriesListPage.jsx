@@ -39,19 +39,7 @@ const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
 
       {/* Main Content */}
       <div className="px-5 pb-24 space-y-1">
-        <div className="py-4">
-          <p className="text-[13px] text-gray-400 leading-relaxed italic opacity-80">
-            修仙归来，降妖除魔。都市传奇，玄幻与现代的碰撞，开启不一样的修真之路。
-          </p>
-          <div className="flex space-x-3 mt-4">
-            <button className="flex-1 py-3 bg-[#1A2333] hover:bg-[#252D3F] text-gray-300 text-[14px] font-bold rounded-full border border-gray-800/50 transition-all">
-              免费试看
-            </button>
-            <button className="flex-1 py-3 bg-[#3B82F6] hover:bg-blue-600 text-white text-[14px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all">
-              立即订阅
-            </button>
-          </div>
-        </div>
+
 
         {/* List */}
         <div className="pt-6">
