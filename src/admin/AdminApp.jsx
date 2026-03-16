@@ -7,32 +7,51 @@ import UserSubscription from './pages/UserSubscription';
 import PaymentConfig from './pages/PaymentConfig';
 import CopywritingConfig from './pages/CopywritingConfig';
 import AdminManagement from './pages/AdminManagement';
-import AdminLogin from './pages/AdminLogin';
-import { GoogleOAuthProvider } from '@react-oauth/google';
+// import AdminLogin from './pages/AdminLogin';
+// import { GoogleOAuthProvider } from '@react-oauth/google';
 
-// TODO: 将此处替换为你从 Google Cloud Console 获取的真实 Client ID
-const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+// const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 const AdminApp = () => {
   const [activeMenu, setActiveMenu] = useState('overview');
-  const [user, setUser] = useState(null); // 管理员登录状态
+  // 临时绕过登录，直接进入后台
+  const [user, setUser] = useState({
+    name: 'Admin',
+    email: 'admin@local',
+    avatar: 'https://ui-avatars.com/api/?name=Admin&background=random'
+  }); 
 
   const handleLoginSuccess = (userData) => {
     setUser(userData);
   };
 
   const handleLogout = () => {
-    setUser(null);
-    setActiveMenu('overview');
+    // setUser(null);
+    // setActiveMenu('overview');
+    alert("当前为开发模式，已禁用退出功能");
   };
 
+  /*
   if (!user) {
+    if (!GOOGLE_CLIENT_ID) {
+      return (
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center p-8">
+          <div className="w-full max-w-xl bg-white border border-slate-200 rounded-3xl p-8 shadow-2xl shadow-slate-900/10">
+            <div className="text-xl font-black text-slate-900">后台登录未配置</div>
+            <div className="mt-2 text-sm text-slate-600 font-medium leading-relaxed">
+              请在 Vercel 环境变量中配置 <span className="font-black">VITE_GOOGLE_CLIENT_ID</span>（Google OAuth Client ID），然后重新部署。
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
         <AdminLogin onLoginSuccess={handleLoginSuccess} />
       </GoogleOAuthProvider>
     );
   }
+  */
 
   const renderContent = () => {
     switch (activeMenu) {
