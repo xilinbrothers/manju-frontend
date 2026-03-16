@@ -35,6 +35,7 @@ const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
     <div className="flex flex-col min-h-screen bg-[#0F172A] text-white">
       {/* Header */}
       <div className="p-5">
+      </div>
 
       {/* Main Content */}
       <div className="px-5 pb-24 space-y-1">
