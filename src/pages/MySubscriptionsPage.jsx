@@ -1,38 +1,50 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { apiFetchJson } from '../utils/api';
 
 const MySubscriptionsPage = ({ onNavigate }) => {
-  // 模拟订阅数据
-  const activeSubs = [
-    {
-      id: 1,
-      title: "霸道总裁的替身娇妻",
-      plan: "90天套餐",
-      remainingDays: 67,
-      progress: 74,
-      status: "active",
-      cover: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=640&h=360"
-    },
-    {
-      id: 2,
-      title: "全能天师在都市",
-      plan: "30天套餐",
-      remainingDays: 3,
-      progress: 10,
-      status: "expiring",
-      cover: "https://images.unsplash.com/photo-1541562232579-512a21360020?auto=format&fit=crop&q=80&w=640&h=360"
-    }
-  ];
+  const [activeSubs, setActiveSubs] = useState([]);
+  const [expiredSubs, setExpiredSubs] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const expiredSubs = [
-    {
-      id: 3,
-      title: "重生之巅峰崛起",
-      expireDate: "2026年2月14日",
-      cover: "https://images.unsplash.com/photo-1614728263952-84ea256f9679?auto=format&fit=crop&q=80&w=640&h=360"
-    }
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        setError('');
+        setIsLoading(true);
+        const data = await apiFetchJson('/api/user/subscriptions');
+        if (cancelled) return;
+        setActiveSubs(Array.isArray(data?.activeSubs) ? data.activeSubs : []);
+        setExpiredSubs(Array.isArray(data?.expiredSubs) ? data.expiredSubs : []);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e?.message || '加载失败');
+        setActiveSubs([]);
+        setExpiredSubs([]);
+      } finally {
+        if (cancelled) return;
+        setIsLoading(false);
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const hasSubscriptions = activeSubs.length > 0 || expiredSubs.length > 0;
+  const hasSubscriptions = useMemo(() => {
+    return activeSubs.length > 0 || expiredSubs.length > 0;
+  }, [activeSubs.length, expiredSubs.length]);
+
+  const openGroup = (link) => {
+    if (!link) return;
+    if (window.Telegram?.WebApp?.openTelegramLink && /^https:\/\/t\.me\//i.test(link)) {
+      window.Telegram.WebApp.openTelegramLink(link);
+      return;
+    }
+    window.open(link, '_blank');
+  };
 
   if (!hasSubscriptions) {
     return (
@@ -43,6 +55,14 @@ const MySubscriptionsPage = ({ onNavigate }) => {
         </div>
         
         <div className="flex-1 flex flex-col items-center justify-center -mt-20">
+          {isLoading && (
+            <div className="text-[13px] text-gray-400 font-medium mb-6">正在加载订阅…</div>
+          )}
+          {!isLoading && error && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-300 rounded-2xl p-4 text-[13px] mb-6 max-w-[320px]">
+              {error}
+            </div>
+          )}
           <div className="w-32 h-32 bg-[#1A2333] rounded-full flex items-center justify-center mb-8 shadow-2xl border border-gray-800/50">
             <div className="text-5xl">📺</div>
           </div>
@@ -69,7 +89,18 @@ const MySubscriptionsPage = ({ onNavigate }) => {
         <p className="text-gray-400 text-[14px] mt-1">管理你的所有订阅内容</p>
       </header>
 
+      {isLoading && (
+        <div className="text-[13px] text-gray-400 font-medium px-1">正在加载订阅…</div>
+      )}
+
+      {!isLoading && error && (
+        <div className="bg-red-500/10 border border-red-500/20 text-red-300 rounded-2xl p-4 text-[13px]">
+          {error}
+        </div>
+      )}
+
       {/* Active Subscriptions */}
+      {!isLoading && !error && (
       <section className="space-y-5 mb-10">
         <h4 className="text-[13px] font-bold text-gray-500 uppercase tracking-widest px-1">
           活跃订阅 ({activeSubs.length})
@@ -116,7 +147,11 @@ const MySubscriptionsPage = ({ onNavigate }) => {
             </div>
 
             <div className="flex space-x-3">
-              <button className="flex-1 py-3 bg-[#252D3F] hover:bg-[#2D374D] text-gray-200 text-[13px] font-bold rounded-2xl border border-gray-700/50 transition-all flex items-center justify-center space-x-2">
+              <button
+                onClick={() => openGroup(sub.groupLink)}
+                disabled={!sub.groupLink}
+                className="flex-1 py-3 bg-[#252D3F] hover:bg-[#2D374D] text-gray-200 text-[13px] font-bold rounded-2xl border border-gray-700/50 transition-all flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
                 <span>👥</span>
                 <span>进入群组</span>
               </button>
@@ -131,9 +166,10 @@ const MySubscriptionsPage = ({ onNavigate }) => {
           </div>
         ))}
       </section>
+      )}
 
       {/* Expired Subscriptions */}
-      {expiredSubs.length > 0 && (
+      {!isLoading && !error && expiredSubs.length > 0 && (
         <section className="space-y-4">
           <h4 className="text-[13px] font-bold text-gray-500 uppercase tracking-widest px-1">
             已过期 ({expiredSubs.length})
