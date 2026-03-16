@@ -122,9 +122,13 @@ const MySubscriptionsPage = ({ onNavigate }) => {
                 <div className="flex justify-between items-start">
                   <h3 className="text-[16px] font-bold leading-tight max-w-[140px]">{sub.title}</h3>
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                    sub.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'
+                    sub.status === 'active' ? 'bg-green-500/10 text-green-500' : 
+                    sub.status === 'expiring' ? 'bg-orange-500/10 text-orange-500' : 
+                    'bg-rose-500/10 text-rose-500'
                   }`}>
-                    进行中
+                    {sub.status === 'active' ? '正常' : 
+                     sub.status === 'expiring' ? '即将到期' : 
+                     '已到期'}
                   </span>
                 </div>
                 <p className="text-[12px] text-gray-500 mt-1.5">{sub.plan}</p>

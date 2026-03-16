@@ -1,6 +1,6 @@
 import React from 'react';
 
-const SeriesCard = ({ series, onSubscribe }) => {
+const SeriesCard = ({ series, onSubscribe, onPreview }) => {
   return (
     <div className="bg-[#111827] rounded-3xl overflow-hidden border border-gray-800/40 shadow-xl mb-6 transition-all hover:border-blue-500/30 group">
       {/* 剧照 */}
@@ -27,10 +27,16 @@ const SeriesCard = ({ series, onSubscribe }) => {
           {series.description}
         </p>
         
-        <div className="mt-auto">
+        <div className="mt-auto flex space-x-3">
+          <button 
+            onClick={() => onPreview(series)}
+            className="flex-1 py-3.5 bg-[#1A2333] hover:bg-[#252D3F] text-gray-300 text-[15px] font-bold rounded-full border border-gray-800/50 transition-all active:scale-[0.97] flex items-center justify-center"
+          >
+            免费试看
+          </button>
           <button 
             onClick={() => onSubscribe(series)}
-            className="w-full py-3.5 bg-[#3B82F6] hover:bg-blue-600 text-white text-[15px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.97] flex items-center justify-center"
+            className="flex-1 py-3.5 bg-[#3B82F6] hover:bg-blue-600 text-white text-[15px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.97] flex items-center justify-center"
           >
             立即订阅
           </button>

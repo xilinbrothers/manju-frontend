@@ -6,6 +6,7 @@ const AdminLayout = ({ children, activeMenu, onMenuChange, user, onLogout }) => 
     { id: 'series', label: '剧集管理', icon: '🎬' },
     { id: 'plans', label: '套餐 & 定价', icon: '💰' },
     { id: 'users', label: '用户 & 订阅', icon: '👥' },
+    { id: 'finance', label: '财务中心', icon: '💹' },
     { id: 'payment', label: '支付配置', icon: '💳' },
     { id: 'copywriting', label: '文案配置', icon: '📝' },
     { id: 'admins', label: '管理员管理', icon: '🛡️' },

@@ -162,7 +162,23 @@ const SeriesManagement = () => {
           </div>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">观影群 ID / 邀请链接</label>
+              <label className="text-sm font-bold text-slate-700">试看群 ID / 邀请链接</label>
+              <input 
+                type="text" 
+                className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="例如: -100123456789"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-700">VIP群 ID / 邀请链接</label>
+              <input 
+                type="text" 
+                className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="例如: -100123456789"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-700">会员群 ID / 邀请链接</label>
               <input 
                 type="text" 
                 className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"

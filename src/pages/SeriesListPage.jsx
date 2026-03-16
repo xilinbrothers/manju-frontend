@@ -112,6 +112,13 @@ const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
             <SeriesCard 
               key={item.id} 
               series={item} 
+              onPreview={() => {
+                // 试看逻辑：直接进入试看群
+                alert('正在进入试看群...');
+                // 这里需要调用API获取试看群链接
+                // 然后通过Telegram Web App打开链接
+                // 示例：window.Telegram.WebApp.openTelegramLink(groupLink);
+              }}
               onSubscribe={() => {
                 onSelectSeries(item);
                 onNavigate('plans');

@@ -146,8 +146,8 @@ const App = () => {
                   <img src="https://telegram.org/img/t_logo.svg" className="w-6 h-6" alt="TG" />
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="text-[15px] font-bold">Telegram Stars</div>
-                  <div className="text-[11px] text-gray-500">Official, Instant</div>
+                  <div className="text-[15px] font-bold">TG Star (Telegram Stars)</div>
+                  <div className="text-[11px] text-gray-500">Telegram官方支付，即时到账</div>
                 </div>
               </button>
 
@@ -160,7 +160,7 @@ const App = () => {
                 </div>
                 <div className="flex-1 text-left">
                   <div className="text-[15px] font-bold">USDT (TRC20)</div>
-                  <div className="text-[11px] text-gray-500">Crypto Payment</div>
+                  <div className="text-[11px] text-gray-500">Telegram官方接口，加密支付</div>
                 </div>
               </button>
               
@@ -218,7 +218,7 @@ const App = () => {
                   </div>
                   <div>
                     <div className="text-[14px] font-bold text-white">{t.vip_group}</div>
-                    <div className="text-[12px] text-gray-400 mt-0.5">{selectedSeries?.title} VIP Group</div>
+                    <div className="text-[12px] text-gray-400 mt-0.5">请进入"我的订阅"查看并进入VIP群</div>
                   </div>
                 </div>
 
@@ -235,9 +235,9 @@ const App = () => {
             </div>
 
             <div className="w-full flex flex-col space-y-3.5 pb-10">
-              <button className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white text-[16px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2">
-                <span>🚀</span>
-                <span>{t.enter_group}</span>
+              <button onClick={() => navigate('my-subs')} className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white text-[16px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2">
+                <span>�</span>
+                <span>查看我的订阅</span>
               </button>
               <button 
                 onClick={() => navigate('welcome')}

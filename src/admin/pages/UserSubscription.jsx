@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 const UserSubscription = () => {
   const [activeTab, setActiveTab] = useState('users');
+  const [timeRange, setTimeRange] = useState('7d');
 
   const users = [
     { id: '12345678', username: '@alex_dev', lastActive: '2026-03-15 10:30', totalSubs: 3 },
@@ -15,6 +16,21 @@ const UserSubscription = () => {
     { user: '@mike_01', series: '星际争霸：破晓', plan: '90天订阅', start: '2025-12-01', end: '2026-03-01', status: '已过期', method: 'USDT' },
   ];
 
+  // 统计数据（示例）
+  const stats = {
+    totalUsers: 1250,
+    activeUsers: 890,
+    newUsers: 120,
+    totalSubscribers: 580,
+    repurchaseRate: '35%',
+    statusStats: {
+      active: 420,
+      expiring: 80,
+      expired: 60,
+      unsubscribed: 670
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
@@ -23,12 +39,73 @@ const UserSubscription = () => {
           <div className="text-sm text-slate-500 font-medium">查看用户活跃与订阅记录（示例数据）</div>
         </div>
         <div className="flex items-center gap-2">
+          <select 
+            value={timeRange} 
+            onChange={(e) => setTimeRange(e.target.value)}
+            className="h-10 px-4 rounded-xl bg-slate-100 border border-slate-200 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          >
+            <option value="7d">近7天</option>
+            <option value="30d">近30天</option>
+            <option value="90d">近90天</option>
+            <option value="custom">自定义</option>
+          </select>
           <button className="h-10 px-4 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold transition-colors">
             导出
           </button>
           <button className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors">
             新增订阅
           </button>
+        </div>
+      </div>
+
+      {/* 统计概览 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <div className="text-sm font-medium text-slate-500">总用户数</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">{stats.totalUsers}</div>
+          <div className="text-xs text-emerald-600 font-bold mt-2">↗ +12.5% 较上月</div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <div className="text-sm font-medium text-slate-500">活跃用户数</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">{stats.activeUsers}</div>
+          <div className="text-xs text-emerald-600 font-bold mt-2">↗ +8.3% 较上月</div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <div className="text-sm font-medium text-slate-500">总订阅用户数</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">{stats.totalSubscribers}</div>
+          <div className="text-xs text-emerald-600 font-bold mt-2">↗ +5.2% 较上月</div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <div className="text-sm font-medium text-slate-500">复购率</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">{stats.repurchaseRate}</div>
+          <div className="text-xs text-emerald-600 font-bold mt-2">↗ +2.1% 较上月</div>
+        </div>
+      </div>
+
+      {/* 订阅状态占比 */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div className="text-base font-black text-slate-900 mb-4">订阅状态分布</div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-emerald-50 rounded-xl p-4">
+            <div className="text-sm font-medium text-emerald-700">已订阅</div>
+            <div className="text-xl font-black text-emerald-900 mt-1">{stats.statusStats.active}</div>
+            <div className="text-xs text-emerald-600 font-bold mt-1">{Math.round(stats.statusStats.active / stats.totalUsers * 100)}%</div>
+          </div>
+          <div className="bg-amber-50 rounded-xl p-4">
+            <div className="text-sm font-medium text-amber-700">即将到期</div>
+            <div className="text-xl font-black text-amber-900 mt-1">{stats.statusStats.expiring}</div>
+            <div className="text-xs text-amber-600 font-bold mt-1">{Math.round(stats.statusStats.expiring / stats.totalUsers * 100)}%</div>
+          </div>
+          <div className="bg-rose-50 rounded-xl p-4">
+            <div className="text-sm font-medium text-rose-700">已到期</div>
+            <div className="text-xl font-black text-rose-900 mt-1">{stats.statusStats.expired}</div>
+            <div className="text-xs text-rose-600 font-bold mt-1">{Math.round(stats.statusStats.expired / stats.totalUsers * 100)}%</div>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4">
+            <div className="text-sm font-medium text-slate-700">未订阅</div>
+            <div className="text-xl font-black text-slate-900 mt-1">{stats.statusStats.unsubscribed}</div>
+            <div className="text-xs text-slate-600 font-bold mt-1">{Math.round(stats.statusStats.unsubscribed / stats.totalUsers * 100)}%</div>
+          </div>
         </div>
       </div>
 
@@ -112,6 +189,8 @@ const UserSubscription = () => {
                   <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-black border ${
                     s.status === '生效中'
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : s.status === '即将到期'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
                       : 'bg-rose-50 text-rose-700 border-rose-200'
                   }`}>
                     {s.status}

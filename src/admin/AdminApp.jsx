@@ -7,6 +7,7 @@ import UserSubscription from './pages/UserSubscription';
 import PaymentConfig from './pages/PaymentConfig';
 import CopywritingConfig from './pages/CopywritingConfig';
 import AdminManagement from './pages/AdminManagement';
+import FinanceCenter from './pages/FinanceCenter';
 // import AdminLogin from './pages/AdminLogin';
 // import { GoogleOAuthProvider } from '@react-oauth/google';
 
@@ -63,6 +64,8 @@ const AdminApp = () => {
         return <PlansPricing />;
       case 'users':
         return <UserSubscription />;
+      case 'finance':
+        return <FinanceCenter />;
       case 'payment':
         return <PaymentConfig />;
       case 'copywriting':
