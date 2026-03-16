@@ -1,14 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import SeriesCard from '../components/SeriesCard';
 import { apiFetchJson } from '../utils/api';
 
 const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
-  const [activeCategory, setActiveCategory] = useState('全部');
-  const [search, setSearch] = useState('');
   const [series, setSeries] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const categories = ['全部', '都市情感', '玄幻修仙', '商战权谋'];
   
   useEffect(() => {
     let cancelled = false;
@@ -34,47 +31,10 @@ const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
     };
   }, []);
 
-  const filteredSeries = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return series.filter((s) => {
-      if (activeCategory !== '全部' && s.category && s.category !== activeCategory) return false;
-      if (!keyword) return true;
-      return String(s.title || '').toLowerCase().includes(keyword);
-    });
-  }, [activeCategory, search, series]);
-
   return (
     <div className="flex flex-col min-h-screen bg-[#0F172A] text-white">
-      {/* Header with Search */}
-      <div className="p-5 space-y-5">
-        <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-lg">🔍</span>
-          <input 
-            type="text" 
-            placeholder="搜索剧集名称..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full py-3.5 pl-12 pr-4 bg-[#1A2333] border border-gray-800/50 rounded-full text-[14px] text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all shadow-inner"
-          />
-        </div>
-
-        {/* Categories */}
-        <div className="flex space-x-2.5 overflow-x-auto scrollbar-hide py-1">
-          {categories.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`px-5 py-2.5 rounded-full text-[13px] font-bold whitespace-nowrap transition-all ${
-                activeCategory === cat 
-                  ? 'bg-[#3B82F6] text-white shadow-lg shadow-blue-900/20' 
-                  : 'bg-[#1A2333] text-gray-400 border border-gray-800/50'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Header */}
+      <div className="p-5">
 
       {/* Main Content */}
       <div className="px-5 pb-24 space-y-1">
@@ -104,11 +64,11 @@ const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
             </div>
           )}
 
-          {!isLoading && !error && filteredSeries.length === 0 && (
+          {!isLoading && !error && series.length === 0 && (
             <div className="text-[13px] text-gray-500 font-medium px-1">暂无剧集</div>
           )}
 
-          {!isLoading && !error && filteredSeries.map((item) => (
+          {!isLoading && !error && series.map((item) => (
             <SeriesCard 
               key={item.id} 
               series={item} 
