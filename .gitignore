@@ -119,6 +119,13 @@ dist
 # Firebase cache directory
 .firebase/
 
+.trae/
+new-project/
+test-project/
+frontend/styles.css
+bot/data/store.json
+bot/uploads/
+
 # TernJS port file
 .tern-port
 
@@ -137,4 +144,5 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-bot/
+.vercel/
+.vscode/

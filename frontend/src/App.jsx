@@ -3,8 +3,9 @@ import WelcomePage from './pages/WelcomePage';
 import SeriesListPage from './pages/SeriesListPage';
 import PlansPage from './pages/PlansPage';
 import MySubscriptionsPage from './pages/MySubscriptionsPage';
-import AdminApp from './admin/AdminApp';
+// AdminApp 不需要在 App.jsx 中导入，因为它在 main.jsx 中通过路由直接使用
 import { getTranslation } from './utils/i18n';
+import { getApiBaseUrl } from './utils/api';
 
 const App = () => {
   const [currentPage, setCurrentPage] = useState('welcome');
@@ -19,6 +20,57 @@ const App = () => {
   const t = getTranslation(lang);
 
   // 模拟 Telegram Web App 样式初始化
+  useEffect(() => {
+    const p = window.location?.pathname || '/';
+    if (p.startsWith('/my-subs')) setCurrentPage('my-subs');
+    else if (p.startsWith('/series')) setCurrentPage('series');
+    else setCurrentPage('welcome');
+  }, []);
+
+  const startPayment = async (paymentMethod) => {
+    if (!selectedSeries?.id || !selectedPlan?.id) {
+      alert('请选择剧集和套餐');
+      return;
+    }
+    if (paymentMethod === 'usdt') {
+      alert('USDT 暂不支持自动支付，请联系客服完成付款');
+      navigate('service');
+      return;
+    }
+    if (paymentMethod === 'stars') {
+      alert('Telegram Stars 支付已下线');
+      return;
+    }
+    try {
+      const baseUrl = getApiBaseUrl();
+      const initData = window.Telegram?.WebApp?.initData || '';
+      const res = await fetch(`${baseUrl}/api/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(initData ? { 'x-telegram-init-data': initData } : {}),
+        },
+        body: JSON.stringify({
+          series_id: selectedSeries.id,
+          plan_id: selectedPlan.id,
+          payment_method: paymentMethod,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.message || `创建订单失败: ${res.status}`);
+
+      if (data?.pay?.type === 'alipay' && data?.pay?.url) {
+        window.open(data.pay.url, '_blank');
+        alert('请在新打开的页面中完成支付，支付成功后返回查看“我的订阅”。');
+        return;
+      }
+
+      alert('未获取到支付信息');
+    } catch (e) {
+      alert(e?.message || '支付失败');
+    }
+  };
+
   useEffect(() => {
     // 1. 通知 Telegram SDK 已就绪
     if (window.Telegram?.WebApp) {
@@ -73,7 +125,7 @@ const App = () => {
         color: '#3B82F6',
         is_visible: true
       });
-      const handleMainClick = () => navigate('success');
+      const handleMainClick = () => startPayment('alipay');
       tg.onEvent('mainButtonClicked', handleMainClick);
       return () => {
         tg.offEvent('mainButtonClicked', handleMainClick);
@@ -82,7 +134,7 @@ const App = () => {
     } else {
       tg.MainButton.hide();
     }
-  }, [currentPage, selectedPlan]);
+  }, [currentPage, selectedPlan, selectedSeries]);
 
   const navigate = (page) => {
     setCurrentPage(page);
@@ -130,49 +182,33 @@ const App = () => {
               </div>
             </div>
 
-            <div className="bg-green-500/10 rounded-2xl p-4 flex items-center space-x-3 border border-green-500/20 mb-8">
-              <span className="text-green-500 text-lg">🛡️</span>
-              <p className="text-[12px] text-green-500 font-medium">{t.pay_security}</p>
-            </div>
+
 
             <h4 className="text-[15px] font-bold mb-5 px-1">{t.select_pay_method}</h4>
 
             <div className="flex flex-col space-y-3.5 mb-24">
               <button 
-                onClick={() => navigate('success')}
-                className="w-full p-5 bg-[#1A2333] hover:bg-[#252D3F] rounded-3xl border border-gray-800 flex items-center group transition-all"
-              >
-                <div className="w-12 h-12 bg-blue-500 rounded-2xl flex items-center justify-center mr-4 shadow-lg shadow-blue-500/20">
-                  <img src="https://telegram.org/img/t_logo.svg" className="w-6 h-6" alt="TG" />
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="text-[15px] font-bold">TG Star (Telegram Stars)</div>
-                  <div className="text-[11px] text-gray-500">Telegram官方支付，即时到账</div>
-                </div>
-              </button>
-
-              <button 
-                onClick={() => navigate('success')}
+                onClick={() => startPayment('usdt')}
                 className="w-full p-5 bg-[#1A2333] hover:bg-[#252D3F] rounded-3xl border border-gray-800 flex items-center group transition-all"
               >
                 <div className="w-12 h-12 bg-green-500 rounded-2xl flex items-center justify-center mr-4 shadow-lg shadow-green-500/20">
                   <span className="text-white font-bold">₿</span>
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="text-[15px] font-bold">USDT (TRC20)</div>
-                  <div className="text-[11px] text-gray-500">Telegram官方接口，加密支付</div>
+                  <div className="text-[15px] font-bold">USDT（联系客服）</div>
+                  <div className="text-[11px] text-gray-500">暂不支持自动支付，人工对接</div>
                 </div>
               </button>
               
               <button 
-                onClick={() => navigate('success')}
+                onClick={() => startPayment('alipay')}
                 className="w-full p-5 bg-[#1A2333] hover:bg-[#252D3F] rounded-3xl border border-gray-800 flex items-center group transition-all"
               >
                 <div className="w-12 h-12 bg-[#1677FF] rounded-2xl flex items-center justify-center mr-4 shadow-lg shadow-blue-500/20">
-                  <img src="https://gw.alipayobjects.com/zos/rmsportal/nxpXpSpxvQpXpXp.png" className="w-6 h-6" alt="Alipay" />
+                  <img src="https://www.alipayobjects.com/static/images/common/logo.png" className="w-6 h-6" alt="支付宝" />
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="text-[15px] font-bold">Alipay</div>
+                  <div className="text-[15px] font-bold">支付宝（Alipay）</div>
                   <div className="text-[11px] text-gray-500">Fast & Secure</div>
                 </div>
               </button>
@@ -236,7 +272,7 @@ const App = () => {
 
             <div className="w-full flex flex-col space-y-3.5 pb-10">
               <button onClick={() => navigate('my-subs')} className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white text-[16px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2">
-                <span>�</span>
+                <span>📌</span>
                 <span>查看我的订阅</span>
               </button>
               <button 
@@ -263,7 +299,7 @@ const App = () => {
             </p>
             <button 
               className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2"
-              onClick={() => window.open('https://t.me/your_support_account', '_blank')}
+              onClick={() => window.open('https://t.me/manjudingyue', '_blank')}
             >
               <span>👤</span>
               <span>联系人工客服</span>
@@ -283,7 +319,7 @@ const App = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0F172A] relative overflow-x-hidden">
+    <div className="min-h-screen bg-[#0F172A] text-white">
       {/* 状态栏占位 */}
       <div className="h-6 w-full"></div>
       {/* 页面内容 */}

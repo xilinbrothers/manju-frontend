@@ -44,7 +44,7 @@ const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
         {/* List */}
         <div className="pt-6">
           {isLoading && (
-            <div className="text-[13px] text-gray-400 font-medium px-1">正在加载剧集…</div>
+            <div className="text-[13px] text-gray-400 font-medium text-center py-8">正在加载剧集…</div>
           )}
 
           {!isLoading && error && (
@@ -54,30 +54,43 @@ const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
           )}
 
           {!isLoading && !error && series.length === 0 && (
-            <div className="text-[13px] text-gray-500 font-medium px-1">暂无剧集</div>
+            <div className="text-[13px] text-gray-500 font-medium text-center py-8">暂无剧集</div>
           )}
 
-          {!isLoading && !error && series.map((item) => (
-            <SeriesCard 
-              key={item.id} 
-              series={item} 
-              onPreview={() => {
-                // 试看逻辑：直接进入试看群
-                alert('正在进入试看群...');
-                // 这里需要调用API获取试看群链接
-                // 然后通过Telegram Web App打开链接
-                // 示例：window.Telegram.WebApp.openTelegramLink(groupLink);
-              }}
-              onSubscribe={() => {
-                onSelectSeries(item);
-                onNavigate('plans');
-              }} 
-            />
-          ))}
-        </div>
-
-        <div className="py-8 text-center">
-          <span className="text-[12px] text-gray-600 font-medium">已显示全部剧集</span>
+          {!isLoading && !error && series.length > 0 && (
+            <>
+              {series.map((item) => (
+                <SeriesCard 
+                  key={item.id} 
+                  series={item} 
+                  onPreview={async () => {
+                    try {
+                      const resp = await apiFetchJson('/api/preview', {
+                        method: 'POST',
+                        body: JSON.stringify({ series_id: item.id }),
+                      });
+                      const link = resp?.invite_link;
+                      if (!link) throw new Error('未获取到邀请链接');
+                      if (window.Telegram?.WebApp?.openTelegramLink) {
+                        window.Telegram.WebApp.openTelegramLink(link);
+                      } else {
+                        window.open(link, '_blank');
+                      }
+                    } catch (e) {
+                      alert(e?.message || '进入试看群失败');
+                    }
+                  }}
+                  onSubscribe={() => {
+                    onSelectSeries(item);
+                    onNavigate('plans');
+                  }} 
+                />
+              ))}
+              <div className="py-8 text-center">
+                <span className="text-[12px] text-gray-600 font-medium">已显示全部剧集</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

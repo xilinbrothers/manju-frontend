@@ -8,6 +8,7 @@ import PaymentConfig from './pages/PaymentConfig';
 import CopywritingConfig from './pages/CopywritingConfig';
 import AdminManagement from './pages/AdminManagement';
 import FinanceCenter from './pages/FinanceCenter';
+import SystemSettings from './pages/SystemSettings';
 // import AdminLogin from './pages/AdminLogin';
 // import { GoogleOAuthProvider } from '@react-oauth/google';
 
@@ -70,6 +71,8 @@ const AdminApp = () => {
         return <PaymentConfig />;
       case 'copywriting':
         return <CopywritingConfig />;
+      case 'settings':
+        return <SystemSettings />;
       case 'admins':
         return <AdminManagement />;
       default:

@@ -90,11 +90,6 @@ const PlansPage = ({ series, onSelectPlan, onNavigate }) => {
 
         {!isLoading && !error && plans.map(plan => (
           <div key={plan.id} className="relative group">
-            {plan.popular && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-600 to-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg z-10 flex items-center">
-                🔥 最受欢迎
-              </div>
-            )}
             {plan.note && (
               <div className="absolute top-3 right-4 bg-gray-700/80 text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded-md z-10">
                 {plan.note}
@@ -141,14 +136,12 @@ const PlansPage = ({ series, onSelectPlan, onNavigate }) => {
             onNavigate('payment');
           }}
           disabled={!currentPlan}
-          className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white text-[16px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full py-3.5 bg-[#3B82F6] hover:bg-blue-600 text-white text-[16px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <span className="text-lg">💳</span>
           <span>立即支付 ￥{currentPlan?.price || '--'}</span>
         </button>
-        <p className="mt-4 text-[10px] text-gray-500">
-          点击支付即表示同意 <span className="text-blue-500">服务条款</span> 和 <span className="text-blue-500">隐私政策</span>
-        </p>
+
       </div>
     </div>
   );
