@@ -980,6 +980,9 @@ app.listen(PORT, () => {
 
 const startBot = async (attempt = 1) => {
   try {
+    try {
+      await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+    } catch {}
     await bot.launch();
     console.log('✅ Bot 已成功启动！');
     try {
