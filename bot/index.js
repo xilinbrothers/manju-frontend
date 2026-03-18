@@ -25,6 +25,7 @@ if (!process.env.BOT_TOKEN) {
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const WEB_APP_URL = process.env.WEB_APP_URL || 'http://localhost:5173';
 let mongoReady = false;
+let mongoInitLogged = false;
 
 const initMongo = async () => {
   try {
@@ -37,8 +38,12 @@ const initMongo = async () => {
     if (!existingConfig) {
       await Config.create({ key: 'default' });
     }
-  } catch {
+  } catch (e) {
     mongoReady = false;
+    if (!mongoInitLogged) {
+      mongoInitLogged = true;
+      console.error('❌ MongoDB 连接失败：请检查 MONGODB_URI / Atlas 用户密码 / IP 白名单', e?.message || e);
+    }
   }
 };
 
