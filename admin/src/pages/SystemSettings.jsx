@@ -10,6 +10,9 @@ const SystemSettings = () => {
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [menuInfo, setMenuInfo] = useState(null);
+  const [menuError, setMenuError] = useState('');
+  const [isMenuLoading, setIsMenuLoading] = useState(false);
 
   const refresh = async () => {
     try {
@@ -29,6 +32,20 @@ const SystemSettings = () => {
     }
   };
 
+  const refreshMenuButton = async () => {
+    try {
+      setMenuError('');
+      setIsMenuLoading(true);
+      const data = await apiFetchJson('/api/admin/telegram/menu-button');
+      setMenuInfo(data?.menu_button || null);
+    } catch (e) {
+      setMenuError(e?.message || '加载失败');
+      setMenuInfo(null);
+    } finally {
+      setIsMenuLoading(false);
+    }
+  };
+
   const save = async () => {
     try {
       setError('');
@@ -42,6 +59,7 @@ const SystemSettings = () => {
 
   useEffect(() => {
     refresh();
+    refreshMenuButton();
   }, []);
 
   return (
@@ -122,6 +140,46 @@ const SystemSettings = () => {
           </div>
 
           <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-base font-black text-slate-900">Telegram 菜单按钮</div>
+                  <div className="text-xs text-slate-500 font-medium">只读显示当前生效状态</div>
+                </div>
+                <button
+                  onClick={refreshMenuButton}
+                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
+                >
+                  刷新
+                </button>
+              </div>
+
+              {isMenuLoading ? (
+                <div className="text-sm text-slate-500 font-semibold">正在加载…</div>
+              ) : menuError ? (
+                <div className="text-sm text-rose-700 font-semibold">{menuError}</div>
+              ) : (
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="text-slate-500 font-semibold">类型</div>
+                    <div className="font-mono font-bold text-slate-900">{menuInfo?.type || '-'}</div>
+                  </div>
+                  {menuInfo?.type === 'web_app' ? (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="text-slate-500 font-semibold">文案</div>
+                        <div className="font-bold text-slate-900">{menuInfo?.text || '-'}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-slate-500 font-semibold">URL</div>
+                        <div className="font-mono text-xs text-slate-900 break-all">{menuInfo?.web_app?.url || '-'}</div>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
               <div className="text-base font-black text-slate-900">快捷操作</div>
               <button

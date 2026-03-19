@@ -612,6 +612,32 @@ app.post('/api/admin/payment', (req, res) => {
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
 });
 
+app.get('/api/admin/telegram/menu-button', (req, res) => {
+  (async () => {
+    const menuButton = await bot.telegram.callApi('getChatMenuButton', {});
+    return res.json({ menu_button: menuButton?.menu_button || menuButton || null, updatedAt: dateNowIso() });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.post('/api/admin/telegram/menu-button', (req, res) => {
+  (async () => {
+    const body = req.body || {};
+    const action = String(body.action || '');
+    if (action === 'reset') {
+      const r = await bot.telegram.callApi('setChatMenuButton', { menu_button: { type: 'default' } });
+      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
+    }
+    if (action === 'web_app') {
+      const text = String(body.text || '').trim();
+      const url = String(body.url || '').trim();
+      if (!text || !url) return res.status(400).json({ success: false, message: '参数缺失' });
+      const r = await bot.telegram.callApi('setChatMenuButton', { menu_button: { type: 'web_app', text, web_app: { url } } });
+      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
+    }
+    return res.status(400).json({ success: false, message: '不支持的操作' });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
 app.get('/api/admin/stats/users', (req, res) => {
   (async () => {
     const now = Date.now();
