@@ -6,6 +6,7 @@ const MySubscriptionsPage = ({ onNavigate, onRenew }) => {
   const [expiredSubs, setExpiredSubs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [joiningId, setJoiningId] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +45,27 @@ const MySubscriptionsPage = ({ onNavigate, onRenew }) => {
       return;
     }
     window.open(link, '_blank');
+  };
+
+  const requestVipInviteLink = async (seriesId) => {
+    const data = await apiFetchJson('/api/vip/invite-link', { method: 'POST', body: JSON.stringify({ series_id: seriesId }) });
+    if (!data?.invite_link) throw new Error('未获取到入群链接');
+    return data.invite_link;
+  };
+
+  const joinVipGroup = async (sub) => {
+    if (!sub?.seriesId) return;
+    if (!sub?.hasVipGroup) return;
+    if (joiningId) return;
+    try {
+      setJoiningId(sub.id);
+      const link = await requestVipInviteLink(sub.seriesId);
+      openGroup(link);
+    } catch (e) {
+      alert(e?.message || '获取入群链接失败');
+    } finally {
+      setJoiningId('');
+    }
   };
 
   if (!hasSubscriptions) {
@@ -152,12 +174,12 @@ const MySubscriptionsPage = ({ onNavigate, onRenew }) => {
 
             <div className="flex space-x-3">
               <button
-                onClick={() => openGroup(sub.groupLink)}
-                disabled={!sub.groupLink}
+                onClick={() => joinVipGroup(sub)}
+                disabled={!sub.hasVipGroup || joiningId === sub.id}
                 className="flex-1 py-3 bg-[#252D3F] hover:bg-[#2D374D] text-gray-200 text-[13px] font-bold rounded-2xl border border-gray-700/50 transition-all flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span>👥</span>
-                <span>进入群组</span>
+                <span>{joiningId === sub.id ? '获取链接中…' : '进入群组'}</span>
               </button>
               <button className={`flex-1 py-3 text-white text-[13px] font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center ${
                 sub.status === 'active' 

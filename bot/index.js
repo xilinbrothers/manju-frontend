@@ -262,9 +262,9 @@ const createSingleUseInviteLink = async (groupId) => {
   return result.invite_link;
 };
 
-const createJoinRequestInviteLink = async (groupId) => {
+const createJoinRequestInviteLink = async (groupId, ttlSeconds = 15 * 60) => {
   if (!groupId) throw new Error('未配置群组 ID');
-  const expireDate = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
+  const expireDate = Math.floor((Date.now() + Number(ttlSeconds || 0) * 1000) / 1000);
   const result = await bot.telegram.createChatInviteLink(groupId, {
     expire_date: expireDate,
     creates_join_request: true,
@@ -382,6 +382,44 @@ app.post('/api/preview', telegramAuth, async (req, res) => {
   }
 });
 
+app.post('/api/vip/invite-link', telegramAuth, async (req, res) => {
+  try {
+    const tgUser = req.tg?.user;
+    const userId = String(tgUser?.id || '');
+    const seriesId = String(req.body?.series_id || '').trim();
+    if (!userId) return res.status(401).json({ success: false, message: '未授权' });
+    if (!seriesId) return res.status(400).json({ success: false, message: '参数缺失' });
+    await upsertUserFromTg(tgUser);
+
+    let series = null;
+    if (mongoReady) series = await Series.findOne({ id: seriesId }).lean();
+    else {
+      const store = loadStore();
+      series = (store.series || []).find((s) => s.id === seriesId) || null;
+    }
+    if (!series) return res.status(404).json({ success: false, message: '剧集不存在' });
+    if (!series.vipGroupId) return res.status(400).json({ success: false, message: '未配置VIP群' });
+
+    let sub = null;
+    if (mongoReady) {
+      const user = await User.findOne({ telegramId: userId }).lean();
+      sub = user?.subscriptions?.[seriesId] || null;
+    } else {
+      const store = loadStore();
+      sub = store.users?.[userId]?.subscriptions?.[seriesId] || null;
+    }
+    const planDays = sub ? Number(sub.planDays || 0) : NaN;
+    const expireAt = sub?.expireAt ? new Date(sub.expireAt).getTime() : 0;
+    const ok = Boolean(sub) && (planDays === 0 || (expireAt && expireAt > Date.now()));
+    if (!ok) return res.status(403).json({ success: false, message: '订阅未激活或已到期' });
+
+    const inviteLink = await createJoinRequestInviteLink(String(series.vipGroupId), 15 * 60);
+    return res.json({ success: true, invite_link: inviteLink, userId, seriesId, updatedAt: dateNowIso() });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e?.message || '生成邀请链接失败' });
+  }
+});
+
 app.get('/api/user/subscriptions', telegramAuth, (req, res) => {
   (async () => {
     const tgUser = req.tg?.user;
@@ -422,7 +460,7 @@ app.get('/api/user/subscriptions', telegramAuth, (req, res) => {
         progress,
         status,
         cover: series.cover,
-        groupLink: sub.vipInviteLink || '',
+        hasVipGroup: Boolean(series.vipGroupId),
         expireDate: isLifetime ? '永久有效' : formatDateZh(expireAtIso),
       };
       if (status === 'expired') expiredSubs.push(payload);
@@ -918,13 +956,6 @@ const activateSubscription = async ({ orderId, telegramId }) => {
       : new Date(base + planDays * 24 * 60 * 60 * 1000).toISOString();
     const status = computeStatus(expireAt, expiringDays);
 
-    let vipInviteLink = prevSub?.vipInviteLink || '';
-    if (series.vipGroupId) {
-      try {
-        vipInviteLink = await createJoinRequestInviteLink(series.vipGroupId);
-      } catch {}
-    }
-
     const updatedSub = {
       seriesId: series.id,
       planId: plan.id,
@@ -932,7 +963,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
       planDays: plan.days,
       expireAt,
       status,
-      vipInviteLink,
+      vipInviteLink: '',
       expiringNotifiedAtIso: '',
       expiredHandledAtIso: '',
       updatedAt: dateNowIso(),
@@ -951,8 +982,12 @@ const activateSubscription = async ({ orderId, telegramId }) => {
     await Order.updateOne({ id: orderId }, { $set: { status: 'paid', paidAtIso: dateNowIso() } });
 
     try {
-      if (vipInviteLink) await bot.telegram.sendMessage(userId, `🎉 支付成功！《${series.title}》订阅已激活。\n\n进群链接：${vipInviteLink}`);
-      else await bot.telegram.sendMessage(userId, `🎉 支付成功！《${series.title}》订阅已激活。\n\n请前往“我的订阅”查看。`);
+      const webAppUrl = await getEffectiveWebAppUrl();
+      await bot.telegram.sendMessage(
+        userId,
+        `🎉 支付成功！《${series.title}》订阅已激活。\n\n请前往“我的订阅”点击进入VIP群（系统会为您生成一次性入群申请链接）。`,
+        Markup.inlineKeyboard([[Markup.button.webApp('💎 我的订阅', `${webAppUrl}/my-subs`)]])
+      );
     } catch {}
 
     return true;
@@ -980,13 +1015,6 @@ const activateSubscription = async ({ orderId, telegramId }) => {
   const expiringDays = Number(next.settings?.expiringDays || 7);
   const status = computeStatus(expireAt, expiringDays);
 
-  let vipInviteLink = prevSub.vipInviteLink || '';
-  if (series.vipGroupId) {
-    try {
-      vipInviteLink = await createJoinRequestInviteLink(series.vipGroupId);
-    } catch {}
-  }
-
   const updatedSub = {
     seriesId: series.id,
     planId: plan.id,
@@ -994,7 +1022,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
     planDays: plan.days,
     expireAt,
     status,
-    vipInviteLink,
+    vipInviteLink: '',
     expiringNotifiedAtIso: '',
     expiredHandledAtIso: '',
     updatedAt: dateNowIso(),
@@ -1024,8 +1052,12 @@ const activateSubscription = async ({ orderId, telegramId }) => {
   next = saveStore({ ...next, users: nextUsers, orders: nextOrders });
 
   try {
-    if (vipInviteLink) await bot.telegram.sendMessage(userId, `🎉 支付成功！《${series.title}》订阅已激活。\n\n进群链接：${vipInviteLink}`);
-    else await bot.telegram.sendMessage(userId, `🎉 支付成功！《${series.title}》订阅已激活。\n\n请前往“我的订阅”查看。`);
+    const webAppUrl = await getEffectiveWebAppUrl();
+    await bot.telegram.sendMessage(
+      userId,
+      `🎉 支付成功！《${series.title}》订阅已激活。\n\n请前往“我的订阅”点击进入VIP群（系统会为您生成一次性入群申请链接）。`,
+      Markup.inlineKeyboard([[Markup.button.webApp('💎 我的订阅', `${webAppUrl}/my-subs`)]])
+    );
   } catch {}
 
   return next;
