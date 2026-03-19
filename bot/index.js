@@ -1025,11 +1025,17 @@ const startBot = async (attempt = 1) => {
     await bot.launch();
     console.log('✅ Bot 已成功启动！');
     try {
+      await bot.telegram.setMyCommands(
+        [
+          { command: 'start', description: '开始 / 打开主菜单' },
+        ],
+        { scope: { type: 'default' } }
+      );
+    } catch {}
+    try {
       await bot.telegram.setChatMenuButton({
         menu_button: {
-          type: 'web_app',
-          text: '漫剧商城',
-          web_app: { url: WEB_APP_URL },
+          type: 'commands',
         },
       });
     } catch {}
