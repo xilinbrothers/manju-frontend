@@ -26,6 +26,12 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const WEB_APP_URL = process.env.WEB_APP_URL || 'http://localhost:5173';
 let mongoReady = false;
 let mongoInitLogged = false;
+const DEFAULT_PLANS = [
+  { id: 'plan_30d', label: '30天', days: 30, priceCny: 9.9, enabled: true },
+  { id: 'plan_90d', label: '90天', days: 90, priceCny: 25.9, enabled: true },
+  { id: 'plan_365d', label: '年度', days: 365, priceCny: 88.9, enabled: true },
+  { id: 'plan_lifetime', label: '整部剧', days: 0, priceCny: 128.0, enabled: true },
+];
 const buildRenewUrl = (seriesId) => `${WEB_APP_URL}/?page=plans&series_id=${encodeURIComponent(String(seriesId || ''))}`;
 
 const initMongo = async () => {
@@ -38,6 +44,8 @@ const initMongo = async () => {
     const existingConfig = await Config.findOne({ key: 'default' }).lean();
     if (!existingConfig) {
       await Config.create({ key: 'default' });
+    } else if (!Array.isArray(existingConfig.plans) || existingConfig.plans.length === 0) {
+      await Config.updateOne({ key: 'default' }, { $set: { plans: DEFAULT_PLANS } }, { upsert: true });
     }
   } catch (e) {
     mongoReady = false;
@@ -104,7 +112,7 @@ const computeDailyStats = async (dateKey) => {
 const getConfig = async () => {
   if (mongoReady) {
     const doc = await Config.findOne({ key: 'default' }).lean();
-    if (doc) return doc;
+    if (doc) return { ...doc, plans: Array.isArray(doc.plans) ? doc.plans : DEFAULT_PLANS };
     const created = await Config.create({ key: 'default' });
     return created.toObject();
   }
@@ -113,12 +121,7 @@ const getConfig = async () => {
     key: 'default',
     settings: store.settings || {},
     payment: store.payment || {},
-    plans: store.plans || [
-      { id: 'plan_30d', label: '30天', days: 30, priceCny: 9.9, enabled: true },
-      { id: 'plan_90d', label: '90天', days: 90, priceCny: 25.9, enabled: true },
-      { id: 'plan_365d', label: '年度', days: 365, priceCny: 88.9, enabled: true },
-      { id: 'plan_lifetime', label: '整部剧', days: 0, priceCny: 128.0, enabled: true }
-    ],
+    plans: store.plans || DEFAULT_PLANS,
   };
 };
 
