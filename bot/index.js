@@ -26,6 +26,7 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const WEB_APP_URL = process.env.WEB_APP_URL || 'http://localhost:5173';
 let mongoReady = false;
 let mongoInitLogged = false;
+const buildRenewUrl = (seriesId) => `${WEB_APP_URL}/?page=plans&series_id=${encodeURIComponent(String(seriesId || ''))}`;
 
 const initMongo = async () => {
   try {
@@ -369,6 +370,7 @@ app.get('/api/user/subscriptions', telegramAuth, (req, res) => {
       const planLabel = sub.planLabel || '';
       const payload = {
         id: `sub_${tgUser.id}_${seriesId}`,
+        seriesId,
         title: series.title,
         plan: planLabel,
         remainingDays: isLifetime ? 99999 : remainDays,
@@ -702,6 +704,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
       expireAt,
       status,
       vipInviteLink,
+      expiringNotifiedAtIso: '',
       updatedAt: dateNowIso(),
     };
 
@@ -762,6 +765,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
     expireAt,
     status,
     vipInviteLink,
+    expiringNotifiedAtIso: '',
     updatedAt: dateNowIso(),
   };
 
@@ -1076,7 +1080,21 @@ setInterval(async () => {
           const sub = subs[seriesId];
           const nextStatus = computeStatus(sub.expireAt, expiringDays);
           if (sub.status !== nextStatus) changed = true;
-          subs[seriesId] = { ...sub, status: nextStatus };
+          let nextSub = { ...sub, status: nextStatus };
+          if (nextStatus === 'expiring' && !sub.expiringNotifiedAtIso) {
+            const series = seriesList.find((s) => s.id === seriesId);
+            const remainDays = Math.max(0, Math.ceil((new Date(sub.expireAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+            try {
+              await bot.telegram.sendMessage(
+                u.telegramId,
+                `⏰ 您的《${series?.title || ''}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
+                Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
+              );
+            } catch {}
+            nextSub = { ...nextSub, expiringNotifiedAtIso: dateNowIso() };
+            changed = true;
+          }
+          subs[seriesId] = nextSub;
           if (nextStatus === 'expired') {
             const series = seriesList.find((s) => s.id === seriesId);
             if (series?.vipGroupId) {
@@ -1085,7 +1103,11 @@ setInterval(async () => {
               } catch {}
             }
             try {
-              await bot.telegram.sendMessage(u.telegramId, `⏰ 您的《${series?.title || ''}》订阅已到期。请续费后继续观看。`);
+              await bot.telegram.sendMessage(
+                u.telegramId,
+                `⏰ 您的《${series?.title || ''}》订阅已到期。请续费后继续观看。`,
+                Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
+              );
             } catch {}
           }
         }
@@ -1112,7 +1134,20 @@ setInterval(async () => {
       for (const seriesId of Object.keys(subs)) {
         const sub = subs[seriesId];
         const status = computeStatus(sub.expireAt, expiringDays);
-        subs[seriesId] = { ...sub, status };
+        let nextSub = { ...sub, status };
+        if (status === 'expiring' && !sub.expiringNotifiedAtIso) {
+          const series = (store.series || []).find((s) => s.id === seriesId);
+          const remainDays = Math.max(0, Math.ceil((new Date(sub.expireAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+          try {
+            await bot.telegram.sendMessage(
+              uid,
+              `⏰ 您的《${series?.title || ''}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
+              Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
+            );
+          } catch {}
+          nextSub = { ...nextSub, expiringNotifiedAtIso: dateNowIso() };
+        }
+        subs[seriesId] = nextSub;
         if (status === 'expired') {
           const series = (store.series || []).find((s) => s.id === seriesId);
           if (series?.vipGroupId) {
@@ -1121,7 +1156,11 @@ setInterval(async () => {
             } catch {}
           }
           try {
-            await bot.telegram.sendMessage(uid, `⏰ 您的《${(store.series || []).find((s) => s.id === seriesId)?.title || ''}》订阅已到期。请续费后继续观看。`);
+            await bot.telegram.sendMessage(
+              uid,
+              `⏰ 您的《${(store.series || []).find((s) => s.id === seriesId)?.title || ''}》订阅已到期。请续费后继续观看。`,
+              Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
+            );
           } catch {}
         }
       }

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
 
-const MySubscriptionsPage = ({ onNavigate }) => {
+const MySubscriptionsPage = ({ onNavigate, onRenew }) => {
   const [activeSubs, setActiveSubs] = useState([]);
   const [expiredSubs, setExpiredSubs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -163,7 +163,9 @@ const MySubscriptionsPage = ({ onNavigate }) => {
                 sub.status === 'active' 
                   ? 'bg-transparent border border-gray-700 text-gray-400 hover:bg-white/5' 
                   : 'bg-gradient-to-r from-orange-500 to-red-500 shadow-orange-900/20 active:scale-95'
-              }`}>
+              }`}
+              onClick={() => onRenew?.(sub.seriesId)}
+              >
                 {sub.status === 'active' ? '续费订阅' : '立即续费'}
               </button>
             </div>
@@ -180,7 +182,11 @@ const MySubscriptionsPage = ({ onNavigate }) => {
           </h4>
           
           {expiredSubs.map(sub => (
-            <div key={sub.id} className="bg-[#1A2333]/40 rounded-3xl p-4 flex items-center space-x-4 border border-gray-800/30 opacity-60 group hover:opacity-100 transition-all cursor-pointer">
+            <div
+              key={sub.id}
+              className="bg-[#1A2333]/40 rounded-3xl p-4 flex items-center space-x-4 border border-gray-800/30 opacity-60 group hover:opacity-100 transition-all cursor-pointer"
+              onClick={() => onRenew?.(sub.seriesId)}
+            >
               <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 grayscale">
                 <img src={sub.cover} className="w-full h-full object-cover" alt="" />
               </div>

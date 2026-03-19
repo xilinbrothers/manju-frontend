@@ -5,7 +5,7 @@ import PlansPage from './pages/PlansPage';
 import MySubscriptionsPage from './pages/MySubscriptionsPage';
 // AdminApp 不需要在 App.jsx 中导入，因为它在 main.jsx 中通过路由直接使用
 import { getTranslation } from './utils/i18n';
-import { getApiBaseUrl } from './utils/api';
+import { apiFetchJson, getApiBaseUrl } from './utils/api';
 
 const App = () => {
   const [currentPage, setCurrentPage] = useState('welcome');
@@ -22,6 +22,28 @@ const App = () => {
   // 模拟 Telegram Web App 样式初始化
   useEffect(() => {
     const p = window.location?.pathname || '/';
+    const qs = window.location?.search || '';
+    const params = new URLSearchParams(qs);
+    const page = String(params.get('page') || '');
+    const seriesId = String(params.get('series_id') || params.get('renew_series_id') || '');
+
+    const setPlansForSeriesId = async (id) => {
+      try {
+        const list = await apiFetchJson('/api/series');
+        const found = Array.isArray(list) ? list.find((s) => String(s?.id) === String(id)) : null;
+        setSelectedSeries(found || { id: String(id) });
+        setCurrentPage('plans');
+      } catch {
+        setSelectedSeries({ id: String(id) });
+        setCurrentPage('plans');
+      }
+    };
+
+    if ((page === 'plans' || page === 'renew') && seriesId) {
+      setPlansForSeriesId(seriesId);
+      return;
+    }
+
     if (p.startsWith('/my-subs')) setCurrentPage('my-subs');
     else if (p.startsWith('/series')) setCurrentPage('series');
     else setCurrentPage('welcome');
@@ -285,7 +307,23 @@ const App = () => {
           </div>
         );
       case 'my-subs':
-        return <MySubscriptionsPage onNavigate={navigate} />;
+        return (
+          <MySubscriptionsPage
+            onNavigate={navigate}
+            onRenew={async (seriesId) => {
+              if (!seriesId) return;
+              try {
+                const list = await apiFetchJson('/api/series');
+                const found = Array.isArray(list) ? list.find((s) => String(s?.id) === String(seriesId)) : null;
+                setSelectedSeries(found || { id: String(seriesId) });
+                navigate('plans');
+              } catch {
+                setSelectedSeries({ id: String(seriesId) });
+                navigate('plans');
+              }
+            }}
+          />
+        );
       case 'service':
         return (
           <div className="flex flex-col min-h-screen bg-[#0F172A] text-white p-6 items-center justify-center text-center">
