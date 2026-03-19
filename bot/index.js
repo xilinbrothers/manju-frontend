@@ -1035,7 +1035,9 @@ const startBot = async (attempt = 1) => {
     try {
       await bot.telegram.setChatMenuButton({
         menu_button: {
-          type: 'commands',
+          type: 'web_app',
+          text: '漫剧商城',
+          web_app: { url: WEB_APP_URL },
         },
       });
     } catch {}
