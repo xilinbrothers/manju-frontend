@@ -112,6 +112,12 @@ const getConfig = async () => {
     key: 'default',
     settings: store.settings || {},
     payment: store.payment || {},
+    plans: store.plans || [
+      { id: 'plan_30d', label: '30天', days: 30, priceCny: 9.9, enabled: true },
+      { id: 'plan_90d', label: '90天', days: 90, priceCny: 25.9, enabled: true },
+      { id: 'plan_365d', label: '年度', days: 365, priceCny: 88.9, enabled: true },
+      { id: 'plan_lifetime', label: '整部剧', days: 0, priceCny: 128.0, enabled: true }
+    ],
   };
 };
 
@@ -270,13 +276,26 @@ app.get('/api/plans', (req, res) => {
   (async () => {
     const seriesId = req.query.series_id;
     let series = null;
+    let globalPlans = [];
     if (mongoReady) {
       series = seriesId ? await Series.findOne({ id: seriesId }).lean() : await Series.findOne({}).lean();
+      const cfg = await getConfig();
+      globalPlans = Array.isArray(cfg.plans) ? cfg.plans : [];
     } else {
       const store = loadStore();
       series = (store.series || []).find((s) => s.id === seriesId) || (store.series || [])[0] || null;
+      const cfg = await getConfig();
+      globalPlans = Array.isArray(cfg.plans) ? cfg.plans : [];
     }
-    const plans = Array.isArray(series?.plans) ? series.plans : [];
+    
+    // 如果剧集启用了套餐覆盖，则使用剧集独立套餐；否则使用全局套餐
+    let plans = [];
+    if (series && series.planOverride && Array.isArray(series.plans) && series.plans.length > 0) {
+      plans = series.plans;
+    } else {
+      plans = globalPlans;
+    }
+    
     const mapped = plans.map((p) => {
       const days = Number(p.days || 0) || 0;
       const price = Number(p.priceCny || 0) || 0;
@@ -343,19 +362,21 @@ app.get('/api/user/subscriptions', telegramAuth, (req, res) => {
       const expireAtIso = sub.expireAt;
       const status = computeStatus(expireAtIso, expiringDays);
       const remainDays = Math.max(0, Math.ceil((new Date(expireAtIso).getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
-      const totalDays = Number(sub.planDays || 0) || Math.max(remainDays, 1);
-      const progress = totalDays ? Math.min(100, Math.max(0, Math.round(((totalDays - remainDays) / totalDays) * 100))) : 0;
+      const planDays = Number(sub.planDays || 0);
+      const isLifetime = planDays === 0;
+      const totalDays = isLifetime ? 1 : (planDays || Math.max(remainDays, 1));
+      const progress = isLifetime ? 0 : (totalDays ? Math.min(100, Math.max(0, Math.round(((totalDays - remainDays) / totalDays) * 100))) : 0);
       const planLabel = sub.planLabel || '';
       const payload = {
         id: `sub_${tgUser.id}_${seriesId}`,
         title: series.title,
         plan: planLabel,
-        remainingDays: remainDays,
+        remainingDays: isLifetime ? 99999 : remainDays,
         progress,
         status,
         cover: series.cover,
         groupLink: sub.vipInviteLink || '',
-        expireDate: formatDateZh(expireAtIso),
+        expireDate: isLifetime ? '永久有效' : formatDateZh(expireAtIso),
       };
       if (status === 'expired') expiredSubs.push(payload);
       else activeSubs.push(payload);
@@ -392,6 +413,7 @@ app.post('/api/admin/series', (req, res) => {
       trialGroupId: body.trialGroupId || '',
       vipGroupId: body.vipGroupId || '',
       memberGroupId: body.memberGroupId || '',
+      planOverride: Boolean(body.planOverride),
       plans: Array.isArray(body.plans) ? body.plans : [],
     };
 
@@ -429,6 +451,7 @@ app.put('/api/admin/series/:id', (req, res) => {
         trialGroupId: body.trialGroupId !== undefined ? body.trialGroupId : prev.trialGroupId,
         vipGroupId: body.vipGroupId !== undefined ? body.vipGroupId : prev.vipGroupId,
         memberGroupId: body.memberGroupId !== undefined ? body.memberGroupId : prev.memberGroupId,
+        planOverride: body.planOverride !== undefined ? Boolean(body.planOverride) : prev.planOverride,
         plans: Array.isArray(body.plans) ? body.plans : prev.plans,
       };
       await Series.updateOne({ id }, { $set: nextItem });
@@ -452,6 +475,7 @@ app.put('/api/admin/series/:id', (req, res) => {
       trialGroupId: body.trialGroupId !== undefined ? body.trialGroupId : prev.trialGroupId,
       vipGroupId: body.vipGroupId !== undefined ? body.vipGroupId : prev.vipGroupId,
       memberGroupId: body.memberGroupId !== undefined ? body.memberGroupId : prev.memberGroupId,
+      planOverride: body.planOverride !== undefined ? Boolean(body.planOverride) : prev.planOverride,
       plans: Array.isArray(body.plans) ? body.plans : prev.plans,
     };
     const nextSeries = [...store.series];
@@ -478,7 +502,7 @@ app.delete('/api/admin/series/:id', (req, res) => {
 app.get('/api/admin/settings', (req, res) => {
   (async () => {
     const cfg = await getConfig();
-    return res.json({ settings: cfg.settings || {}, updatedAt: dateNowIso() });
+    return res.json({ settings: cfg.settings || {}, plans: cfg.plans || [], updatedAt: dateNowIso() });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
 });
 
@@ -494,8 +518,12 @@ app.post('/api/admin/settings', (req, res) => {
         supportLink: body.supportLink !== undefined ? String(body.supportLink || '') : prev.settings?.supportLink,
         welcomeMessage: body.welcomeMessage !== undefined ? String(body.welcomeMessage || '') : prev.settings?.welcomeMessage,
       };
-      await Config.updateOne({ key: 'default' }, { $set: { settings: nextSettings } }, { upsert: true });
-      return res.json({ success: true, settings: nextSettings, updatedAt: dateNowIso() });
+      const updateData = { settings: nextSettings };
+      if (Array.isArray(body.plans)) {
+        updateData.plans = body.plans;
+      }
+      await Config.updateOne({ key: 'default' }, { $set: updateData }, { upsert: true });
+      return res.json({ success: true, settings: nextSettings, plans: updateData.plans || prev.plans, updatedAt: dateNowIso() });
     }
     const store = loadStore();
     const nextSettings = {
@@ -505,8 +533,12 @@ app.post('/api/admin/settings', (req, res) => {
       supportLink: body.supportLink !== undefined ? String(body.supportLink || '') : store.settings?.supportLink,
       welcomeMessage: body.welcomeMessage !== undefined ? String(body.welcomeMessage || '') : store.settings?.welcomeMessage,
     };
-    const next = saveStore({ ...store, settings: nextSettings });
-    return res.json({ success: true, settings: nextSettings, updatedAt: next.updatedAt });
+    const nextStore = { ...store, settings: nextSettings };
+    if (Array.isArray(body.plans)) {
+      nextStore.plans = body.plans;
+    }
+    const next = saveStore(nextStore);
+    return res.json({ success: true, settings: nextSettings, plans: nextStore.plans || store.plans, updatedAt: next.updatedAt });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
 });
 
@@ -648,7 +680,11 @@ const activateSubscription = async ({ orderId, telegramId }) => {
     const now = Date.now();
     const prevExpire = prevSub?.expireAt ? new Date(prevSub.expireAt).getTime() : 0;
     const base = Math.max(now, prevExpire || 0);
-    const expireAt = new Date(base + Number(plan.days || 0) * 24 * 60 * 60 * 1000).toISOString();
+    const planDays = Number(plan.days || 0);
+    // days 为 0 代表永久/整部剧，设置一个极大的过期时间（例如 100 年后）
+    const expireAt = planDays === 0 
+      ? new Date(base + 100 * 365 * 24 * 60 * 60 * 1000).toISOString()
+      : new Date(base + planDays * 24 * 60 * 60 * 1000).toISOString();
     const status = computeStatus(expireAt, expiringDays);
 
     let vipInviteLink = prevSub?.vipInviteLink || '';
@@ -704,7 +740,10 @@ const activateSubscription = async ({ orderId, telegramId }) => {
   const now = Date.now();
   const prevExpire = prevSub.expireAt ? new Date(prevSub.expireAt).getTime() : 0;
   const base = Math.max(now, prevExpire || 0);
-  const expireAt = new Date(base + Number(plan.days || 0) * 24 * 60 * 60 * 1000).toISOString();
+  const planDays = Number(plan.days || 0);
+  const expireAt = planDays === 0 
+    ? new Date(base + 100 * 365 * 24 * 60 * 60 * 1000).toISOString()
+    : new Date(base + planDays * 24 * 60 * 60 * 1000).toISOString();
   const expiringDays = Number(next.settings?.expiringDays || 7);
   const status = computeStatus(expireAt, expiringDays);
 

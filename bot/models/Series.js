@@ -29,6 +29,7 @@ const SeriesSchema = new mongoose.Schema(
     trialGroupId: { type: String, default: '' },
     vipGroupId: { type: String, default: '' },
     memberGroupId: { type: String, default: '' },
+    planOverride: { type: Boolean, default: false },
     plans: { type: [PlanSchema], default: [] },
   },
   { timestamps: true }

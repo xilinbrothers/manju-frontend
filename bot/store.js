@@ -27,6 +27,12 @@ const defaultStore = () => ({
       apiUrl: '',
     },
   },
+  plans: [
+    { id: 'plan_30d', label: '30天', days: 30, priceCny: 9.9, enabled: true },
+    { id: 'plan_90d', label: '90天', days: 90, priceCny: 25.9, enabled: true },
+    { id: 'plan_365d', label: '年度', days: 365, priceCny: 88.9, enabled: true },
+    { id: 'plan_lifetime', label: '整部剧', days: 0, priceCny: 128.0, enabled: true }
+  ],
   series: [],
   users: {},
   orders: {},
