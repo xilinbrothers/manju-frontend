@@ -1116,6 +1116,9 @@ app.get('/api/order/alipay', async (req, res) => {
     const apiUrl = cfg.payment?.alipay?.apiUrl || process.env.ALIPAY_API_URL || '';
     if (!merchantNo || !merchantKey || !apiUrl) return res.status(400).send('支付宝参数未配置');
 
+    const apiUrlTrimmed = String(apiUrl || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(apiUrlTrimmed)) return res.status(400).send('支付宝接口URL不合法');
+    const createUrl = /\/api\/order\/create$/i.test(apiUrlTrimmed) ? apiUrlTrimmed : `${apiUrlTrimmed}/api/order/create`;
     const notifyUrl = `${getApiBaseUrlForBrowser(req)}/api/order/notify`;
     const productId = cfg.payment?.alipay?.productId ? String(cfg.payment.alipay.productId) : String(order.seriesId || '');
     const params = {
@@ -1127,16 +1130,30 @@ app.get('/api/order/alipay', async (req, res) => {
     };
     const sign = generateAlipaySign(params, merchantKey);
     const body = new URLSearchParams({ ...params, sign }).toString();
-    const resp = await fetch(`${apiUrl.replace(/\/+$/, '')}/api/order/create`, {
+    const resp = await fetch(createUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
     });
-    const json = await resp.json().catch(() => null);
-    if (!json?.success || !json?.result?.url) return res.status(502).send('支付宝下单失败');
+    const text = await resp.text().catch(() => '');
+    const json = (() => {
+      try {
+        return JSON.parse(text || '');
+      } catch {
+        return null;
+      }
+    })();
+    if (!resp.ok) {
+      const msg = json?.message || text || `上游状态码: ${resp.status}`;
+      return res.status(502).send(`支付宝下单失败：${String(msg).slice(0, 500)}`);
+    }
+    if (!json?.success || !json?.result?.url) {
+      const msg = json?.message || '缺少支付链接';
+      return res.status(502).send(`支付宝下单失败：${String(msg).slice(0, 500)}`);
+    }
     res.redirect(json.result.url);
-  } catch {
-    res.status(500).send('支付宝下单失败');
+  } catch (e) {
+    res.status(500).send(`支付宝下单失败：${String(e?.message || 'unknown').slice(0, 500)}`);
   }
 });
 

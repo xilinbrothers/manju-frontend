@@ -77,13 +77,13 @@ const PaymentConfig = () => {
 
           <div className="mt-6 space-y-4 flex-1">
             <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">下单地址 (Base URL)</label>
+              <label className="text-sm font-bold text-slate-700">下单地址</label>
               <input
                 type="text"
                 value={draft.alipay.apiUrl}
                 onChange={(e) => setDraft((d) => ({ ...d, alipay: { ...d.alipay, apiUrl: e.target.value } }))}
                 className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                placeholder="http://host:port"
+                placeholder="http://host:port 或 http://host:port/api/order/create"
               />
             </div>
 
