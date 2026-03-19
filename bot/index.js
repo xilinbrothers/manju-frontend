@@ -331,7 +331,19 @@ app.post('/api/preview', telegramAuth, async (req, res) => {
     }
     if (!series) return res.status(404).json({ success: false, message: '剧集不存在' });
     if (!series.trialGroupId) return res.status(400).json({ success: false, message: '未配置试看群' });
-    const inviteLink = await createSingleUseInviteLink(series.trialGroupId);
+    const raw = String(series.trialGroupId || '').trim();
+    let inviteLink = '';
+    if (/^https?:\/\//i.test(raw)) {
+      inviteLink = raw;
+    } else if (/^(t\.me|telegram\.me)\//i.test(raw)) {
+      inviteLink = `https://${raw}`;
+    } else if (/^@\w+/i.test(raw)) {
+      inviteLink = `https://t.me/${raw.slice(1)}`;
+    } else if (/^\+\w+/i.test(raw)) {
+      inviteLink = `https://t.me/${raw}`;
+    } else {
+      inviteLink = await createSingleUseInviteLink(raw);
+    }
     res.json({ success: true, invite_link: inviteLink, userId: String(tgUser.id) });
   } catch (e) {
     res.status(500).json({ success: false, message: e?.message || '生成邀请链接失败' });
