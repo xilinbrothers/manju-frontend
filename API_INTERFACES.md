@@ -67,7 +67,7 @@
     "user_id": "tg_user_123",
     "series_id": "series_001",
     "plan_id": "30days",
-    "payment_method": "stars|usdt|alipay"
+    "payment_method": "alipay"
   }
   ```
 
@@ -139,8 +139,6 @@
     "totalRevenue": 328000,
     "totalOrders": 1250,
     "paymentMethodStats": {
-      "stars": { "amount": 120000, "orders": 450, "percentage": "36.6%" },
-      "usdt": { "amount": 108000, "orders": 400, "percentage": "32.9%" },
       "alipay": { "amount": 100000, "orders": 400, "percentage": "30.5%" }
     },
     "seriesStats": [
