@@ -24,6 +24,7 @@ if (!process.env.BOT_TOKEN) {
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const WEB_APP_URL = process.env.WEB_APP_URL || 'http://localhost:5173';
+const HAS_MONGO_URI = Boolean(getMongoUri());
 let mongoReady = false;
 let mongoInitLogged = false;
 const DEFAULT_PLANS = [
@@ -413,6 +414,7 @@ app.get('/api/user/subscriptions', telegramAuth, (req, res) => {
 
 app.get('/api/admin/series', (req, res) => {
   (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     if (mongoReady) {
       const items = await Series.find({}).lean();
       return res.json({ items, updatedAt: dateNowIso() });
@@ -424,6 +426,7 @@ app.get('/api/admin/series', (req, res) => {
 
 app.post('/api/admin/series', (req, res) => {
   (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     const body = req.body || {};
     const id = body.id || `series_${Date.now()}`;
     const item = {
@@ -457,6 +460,7 @@ app.post('/api/admin/series', (req, res) => {
 
 app.put('/api/admin/series/:id', (req, res) => {
   (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     const id = req.params.id;
     const body = req.body || {};
 
@@ -509,6 +513,7 @@ app.put('/api/admin/series/:id', (req, res) => {
 
 app.delete('/api/admin/series/:id', (req, res) => {
   (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     const id = req.params.id;
     if (mongoReady) {
       await Series.deleteOne({ id });
@@ -523,6 +528,7 @@ app.delete('/api/admin/series/:id', (req, res) => {
 
 app.get('/api/admin/settings', (req, res) => {
   (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     const cfg = await getConfig();
     return res.json({ settings: cfg.settings || {}, plans: cfg.plans || [], updatedAt: dateNowIso() });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
@@ -530,6 +536,7 @@ app.get('/api/admin/settings', (req, res) => {
 
 app.post('/api/admin/settings', (req, res) => {
   (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     const body = req.body || {};
     if (mongoReady) {
       const prev = await getConfig();
@@ -566,6 +573,7 @@ app.post('/api/admin/settings', (req, res) => {
 
 app.get('/api/admin/payment', (req, res) => {
   (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     const cfg = await getConfig();
     return res.json({ payment: cfg.payment || {}, updatedAt: dateNowIso() });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
@@ -573,6 +581,7 @@ app.get('/api/admin/payment', (req, res) => {
 
 app.post('/api/admin/payment', (req, res) => {
   (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     const body = req.body || {};
     if (mongoReady) {
       const prev = await getConfig();
@@ -1109,9 +1118,6 @@ const startBot = async (attempt = 1) => {
         ],
         { scope: { type: 'default' } }
       );
-    } catch {}
-    try {
-      await bot.telegram.setChatMenuButton({ menu_button: { type: 'default' } });
     } catch {}
   } catch (e) {
     const msg = e?.message || e;
