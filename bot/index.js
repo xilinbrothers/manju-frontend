@@ -857,12 +857,6 @@ app.post('/api/orders', telegramAuth, async (req, res) => {
       });
     }
 
-    if (payment_method === 'usdt') {
-      const cfg = await getConfig();
-      const support = cfg.settings?.supportLink || 'https://t.me/your_support_username';
-      return res.status(400).json({ success: false, message: `USDT 暂不支持自动支付，请联系客服：${support}` });
-    }
-
     if (payment_method === 'stars') {
       return res.status(400).json({ success: false, message: 'Telegram Stars 支付已下线' });
     }

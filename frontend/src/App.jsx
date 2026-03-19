@@ -54,11 +54,6 @@ const App = () => {
       alert('请选择剧集和套餐');
       return;
     }
-    if (paymentMethod === 'usdt') {
-      alert('USDT 暂不支持自动支付，请联系客服完成付款');
-      navigate('service');
-      return;
-    }
     if (paymentMethod === 'stars') {
       alert('Telegram Stars 支付已下线');
       return;
@@ -206,25 +201,12 @@ const App = () => {
 
 
 
-            <h4 className="text-[15px] font-bold mb-5 px-1">{t.select_pay_method}</h4>
+            <h4 className="text-[15px] font-bold mb-5 px-1">支付宝支付</h4>
 
             <div className="flex flex-col space-y-3.5 mb-24">
               <button 
-                onClick={() => startPayment('usdt')}
-                className="w-full p-5 bg-[#1A2333] hover:bg-[#252D3F] rounded-3xl border border-gray-800 flex items-center group transition-all"
-              >
-                <div className="w-12 h-12 bg-green-500 rounded-2xl flex items-center justify-center mr-4 shadow-lg shadow-green-500/20">
-                  <span className="text-white font-bold">₿</span>
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="text-[15px] font-bold">USDT（联系客服）</div>
-                  <div className="text-[11px] text-gray-500">暂不支持自动支付，人工对接</div>
-                </div>
-              </button>
-              
-              <button 
                 onClick={() => startPayment('alipay')}
-                className="w-full p-5 bg-[#1A2333] hover:bg-[#252D3F] rounded-3xl border border-gray-800 flex items-center group transition-all"
+                className="w-full p-5 bg-[#1A2333] hover:bg-[#252D3F] rounded-3xl border border-blue-500/60 ring-1 ring-blue-500/30 flex items-center group transition-all"
               >
                 <div className="w-12 h-12 bg-[#1677FF] rounded-2xl flex items-center justify-center mr-4 shadow-lg shadow-blue-500/20">
                   <img src="https://www.alipayobjects.com/static/images/common/logo.png" className="w-6 h-6" alt="支付宝" />
