@@ -61,7 +61,6 @@ const SeriesManagement = () => {
       enabled: raw.enabled !== false,
       trialGroupId: raw.trialGroupId || '',
       vipGroupId: raw.vipGroupId || '',
-      memberGroupId: raw.memberGroupId || '',
       planOverride: Boolean(raw.planOverride),
       plans: Array.isArray(raw.plans) && raw.plans.length > 0 ? [...raw.plans] : JSON.parse(JSON.stringify(globalPlans)),
     });
@@ -188,7 +187,6 @@ const SeriesManagement = () => {
               enabled: true,
               trialGroupId: '',
               vipGroupId: '',
-              memberGroupId: '',
               planOverride: false,
               plans: JSON.parse(JSON.stringify(globalPlans)),
             });
@@ -396,16 +394,6 @@ const SeriesManagement = () => {
                 type="text" 
                 value={draft?.vipGroupId || ''}
                 onChange={(e) => setDraft((d) => ({ ...(d || {}), vipGroupId: e.target.value }))}
-                className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                placeholder="例如: -100123456789"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">会员群 ID / 邀请链接</label>
-              <input 
-                type="text" 
-                value={draft?.memberGroupId || ''}
-                onChange={(e) => setDraft((d) => ({ ...(d || {}), memberGroupId: e.target.value }))}
                 className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 placeholder="例如: -100123456789"
               />

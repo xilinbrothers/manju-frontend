@@ -241,6 +241,16 @@ const createSingleUseInviteLink = async (groupId) => {
   return result.invite_link;
 };
 
+const createJoinRequestInviteLink = async (groupId) => {
+  if (!groupId) throw new Error('未配置群组 ID');
+  const expireDate = Math.floor((Date.now() + 7 * 24 * 60 * 60 * 1000) / 1000);
+  const result = await bot.telegram.createChatInviteLink(groupId, {
+    expire_date: expireDate,
+    creates_join_request: true,
+  });
+  return result.invite_link;
+};
+
 // API 身份验证中间件 (基于 Telegram initData)
 const telegramAuth = (req, res, next) => {
   const initData = req.headers['x-telegram-init-data'];
@@ -427,7 +437,6 @@ app.post('/api/admin/series', (req, res) => {
       enabled: body.enabled !== false,
       trialGroupId: body.trialGroupId || '',
       vipGroupId: body.vipGroupId || '',
-      memberGroupId: body.memberGroupId || '',
       planOverride: Boolean(body.planOverride),
       plans: Array.isArray(body.plans) ? body.plans : [],
     };
@@ -465,7 +474,6 @@ app.put('/api/admin/series/:id', (req, res) => {
         enabled: body.enabled !== undefined ? body.enabled !== false : prev.enabled,
         trialGroupId: body.trialGroupId !== undefined ? body.trialGroupId : prev.trialGroupId,
         vipGroupId: body.vipGroupId !== undefined ? body.vipGroupId : prev.vipGroupId,
-        memberGroupId: body.memberGroupId !== undefined ? body.memberGroupId : prev.memberGroupId,
         planOverride: body.planOverride !== undefined ? Boolean(body.planOverride) : prev.planOverride,
         plans: Array.isArray(body.plans) ? body.plans : prev.plans,
       };
@@ -489,7 +497,6 @@ app.put('/api/admin/series/:id', (req, res) => {
       enabled: body.enabled !== undefined ? body.enabled !== false : prev.enabled,
       trialGroupId: body.trialGroupId !== undefined ? body.trialGroupId : prev.trialGroupId,
       vipGroupId: body.vipGroupId !== undefined ? body.vipGroupId : prev.vipGroupId,
-      memberGroupId: body.memberGroupId !== undefined ? body.memberGroupId : prev.memberGroupId,
       planOverride: body.planOverride !== undefined ? Boolean(body.planOverride) : prev.planOverride,
       plans: Array.isArray(body.plans) ? body.plans : prev.plans,
     };
@@ -704,7 +711,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
     let vipInviteLink = prevSub?.vipInviteLink || '';
     if (series.vipGroupId) {
       try {
-        vipInviteLink = await createSingleUseInviteLink(series.vipGroupId);
+        vipInviteLink = await createJoinRequestInviteLink(series.vipGroupId);
       } catch {}
     }
 
@@ -766,7 +773,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
   let vipInviteLink = prevSub.vipInviteLink || '';
   if (series.vipGroupId) {
     try {
-      vipInviteLink = await createSingleUseInviteLink(series.vipGroupId);
+      vipInviteLink = await createJoinRequestInviteLink(series.vipGroupId);
     } catch {}
   }
 
@@ -1017,6 +1024,62 @@ bot.hears(['联系客服', '联系 客服', '联系人工客服', '客服'], asy
   } catch {
     return ctx.reply('联系客服：https://t.me/manjudingyue');
   }
+});
+
+bot.on('chat_join_request', async (ctx) => {
+  try {
+    const req = ctx.update?.chat_join_request;
+    const chatId = String(req?.chat?.id || '');
+    const userId = String(req?.from?.id || '');
+    if (!chatId || !userId) return;
+
+    let series = null;
+    if (mongoReady) {
+      series = await Series.findOne({ vipGroupId: chatId }).lean();
+    } else {
+      const store = loadStore();
+      series = (store.series || []).find((s) => String(s?.vipGroupId || '') === chatId) || null;
+    }
+    if (!series?.id) {
+      try {
+        await bot.telegram.declineChatJoinRequest(chatId, userId);
+      } catch {}
+      return;
+    }
+
+    let sub = null;
+    if (mongoReady) {
+      const user = await User.findOne({ telegramId: userId }).lean();
+      sub = user?.subscriptions?.[series.id] || null;
+    } else {
+      const store = loadStore();
+      sub = store.users?.[userId]?.subscriptions?.[series.id] || null;
+    }
+
+    const planDays = Number(sub?.planDays || 0);
+    const expireAt = sub?.expireAt ? new Date(sub.expireAt).getTime() : 0;
+    const ok = planDays === 0 || (expireAt && expireAt > Date.now());
+    if (!ok) {
+      try {
+        await bot.telegram.declineChatJoinRequest(chatId, userId);
+      } catch {}
+      try {
+        await bot.telegram.sendMessage(
+          userId,
+          `⏰ 您的《${series?.title || ''}》订阅未激活或已到期。请续费后再申请入群。`,
+          Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(series.id))]])
+        );
+      } catch {}
+      return;
+    }
+
+    try {
+      await bot.telegram.approveChatJoinRequest(chatId, userId);
+    } catch {}
+    try {
+      await bot.telegram.sendMessage(userId, `✅ 已通过《${series?.title || ''}》VIP群入群申请。`);
+    } catch {}
+  } catch {}
 });
 
 bot.catch((err, ctx) => {

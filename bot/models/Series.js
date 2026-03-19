@@ -28,7 +28,6 @@ const SeriesSchema = new mongoose.Schema(
     enabled: { type: Boolean, default: true, index: true },
     trialGroupId: { type: String, default: '' },
     vipGroupId: { type: String, default: '' },
-    memberGroupId: { type: String, default: '' },
     planOverride: { type: Boolean, default: false },
     plans: { type: [PlanSchema], default: [] },
   },
