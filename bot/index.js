@@ -1052,6 +1052,10 @@ app.post('/api/orders', telegramAuth, async (req, res) => {
 
     const orderId = `ord_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     const amountCny = Number(plan.priceCny || 0) || 0;
+    const amountFen = Math.round(amountCny * 100);
+    if (!Number.isFinite(amountFen) || amountFen <= 0) {
+      return res.status(400).json({ success: false, message: '套餐金额过低或不合法（需至少 0.01 元）' });
+    }
     const order = {
       id: orderId,
       telegramId: String(tgUser.id),
@@ -1121,11 +1125,13 @@ app.get('/api/order/alipay', async (req, res) => {
     const createUrl = /\/api\/order\/create$/i.test(apiUrlTrimmed) ? apiUrlTrimmed : `${apiUrlTrimmed}/api/order/create`;
     const notifyUrl = `${getApiBaseUrlForBrowser(req)}/api/order/notify`;
     const productId = cfg.payment?.alipay?.productId ? String(cfg.payment.alipay.productId) : String(order.seriesId || '');
+    const amountFen = Math.round(Number(order.amountCny || 0) * 100);
+    if (!Number.isFinite(amountFen) || amountFen <= 0) return res.status(400).send('下单金额不合法（需至少 0.01 元）');
     const params = {
       merchant_no: merchantNo,
       out_order_no: orderId,
       notify_url: notifyUrl,
-      amount: Math.round(Number(order.amountCny || 0) * 100),
+      amount: amountFen,
       product_id: productId,
     };
     const sign = generateAlipaySign(params, merchantKey);
