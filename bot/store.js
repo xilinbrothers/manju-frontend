@@ -28,6 +28,11 @@ const defaultStore = () => ({
       productId: '',
     },
   },
+  telegramOverrides: {
+    menuButton: { mode: 'inherit', text: '', url: '', updatedAtIso: '' },
+    commands: { mode: 'inherit', list: [], updatedAtIso: '' },
+    webhook: { mode: 'inherit', url: '', updatedAtIso: '' },
+  },
   plans: [
     { id: 'plan_30d', label: '30天', days: 30, priceCny: 9.9, enabled: true },
     { id: 'plan_90d', label: '90天', days: 90, priceCny: 25.9, enabled: true },

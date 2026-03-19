@@ -25,6 +25,11 @@ const SystemSettings = () => {
   const [groupCheck, setGroupCheck] = useState(null);
   const [groupCheckError, setGroupCheckError] = useState('');
   const [isGroupCheckLoading, setIsGroupCheckLoading] = useState(false);
+  const [overridesInfo, setOverridesInfo] = useState(null);
+  const [overridesError, setOverridesError] = useState('');
+  const [isOverridesLoading, setIsOverridesLoading] = useState(false);
+  const [menuDraft, setMenuDraft] = useState({ text: '', url: '' });
+  const [commandsDraft, setCommandsDraft] = useState('[]');
 
   const refresh = async () => {
     try {
@@ -114,6 +119,101 @@ const SystemSettings = () => {
     }
   };
 
+  const refreshOverrides = async () => {
+    try {
+      setOverridesError('');
+      setIsOverridesLoading(true);
+      const data = await apiFetchJson('/api/admin/telegram/overrides');
+      setOverridesInfo(data || null);
+      const text = String(data?.overrides?.menuButton?.text || '');
+      const url = String(data?.overrides?.menuButton?.url || '');
+      setMenuDraft((d) => ({ ...d, text: text || d.text, url: url || d.url }));
+      const list = Array.isArray(data?.overrides?.commands?.list) ? data.overrides.commands.list : [];
+      setCommandsDraft(JSON.stringify(list, null, 2));
+    } catch (e) {
+      setOverridesError(e?.message || '加载失败');
+      setOverridesInfo(null);
+    } finally {
+      setIsOverridesLoading(false);
+    }
+  };
+
+  const applyMenuOverride = async () => {
+    const text = String(menuDraft.text || '').trim();
+    const url = String(menuDraft.url || '').trim();
+    if (!text || !url) return alert('请填写文案与URL');
+    const ok = window.confirm('将通过后端覆盖 Telegram Menu Button 为 WebApp。确认继续？');
+    if (!ok) return;
+    try {
+      await apiFetchJson('/api/admin/telegram/menu-button', { method: 'POST', body: JSON.stringify({ action: 'override_web_app', text, url }) });
+      await refreshMenuButton();
+      await refreshOverrides();
+      alert('已覆盖');
+    } catch (e) {
+      alert(e?.message || '操作失败');
+    }
+  };
+
+  const clearMenuOverride = async () => {
+    const ok = window.confirm('仅清除后端“覆盖标记”，后续以 Telegram 端配置为准。确认继续？');
+    if (!ok) return;
+    try {
+      await apiFetchJson('/api/admin/telegram/menu-button', { method: 'POST', body: JSON.stringify({ action: 'clear_override' }) });
+      await refreshMenuButton();
+      await refreshOverrides();
+      alert('已清除覆盖标记');
+    } catch (e) {
+      alert(e?.message || '操作失败');
+    }
+  };
+
+  const applyCommandsOverride = async () => {
+    let list = [];
+    try {
+      const parsed = JSON.parse(commandsDraft || '[]');
+      if (!Array.isArray(parsed)) throw new Error('格式必须是JSON数组');
+      list = parsed;
+    } catch (e) {
+      return alert(e?.message || 'JSON解析失败');
+    }
+    const ok = window.confirm('将通过后端覆盖 Telegram 命令列表（default scope）。确认继续？');
+    if (!ok) return;
+    try {
+      await apiFetchJson('/api/admin/telegram/commands', { method: 'POST', body: JSON.stringify({ action: 'override_set', commands: list }) });
+      await refreshCommands();
+      await refreshOverrides();
+      alert('已覆盖');
+    } catch (e) {
+      alert(e?.message || '操作失败');
+    }
+  };
+
+  const clearCommandsOverride = async () => {
+    const ok = window.confirm('仅清除后端“覆盖标记”，后续以 Telegram 端配置为准。确认继续？');
+    if (!ok) return;
+    try {
+      await apiFetchJson('/api/admin/telegram/commands', { method: 'POST', body: JSON.stringify({ action: 'clear_override' }) });
+      await refreshCommands();
+      await refreshOverrides();
+      alert('已清除覆盖标记');
+    } catch (e) {
+      alert(e?.message || '操作失败');
+    }
+  };
+
+  const deleteWebhook = async () => {
+    const ok = window.confirm('将删除 Telegram Webhook（建议用于轮询模式）。确认继续？');
+    if (!ok) return;
+    try {
+      await apiFetchJson('/api/admin/telegram/webhook', { method: 'POST', body: JSON.stringify({ action: 'delete', drop_pending_updates: true }) });
+      await refreshWebhook();
+      await refreshOverrides();
+      alert('已删除Webhook');
+    } catch (e) {
+      alert(e?.message || '操作失败');
+    }
+  };
+
   const save = async () => {
     try {
       setError('');
@@ -131,6 +231,7 @@ const SystemSettings = () => {
     refreshBotInfo();
     refreshCommands();
     refreshWebhook();
+    refreshOverrides();
   }, []);
 
   return (
@@ -215,7 +316,7 @@ const SystemSettings = () => {
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="text-base font-black text-slate-900">Telegram 菜单按钮</div>
-                  <div className="text-xs text-slate-500 font-medium">只读显示当前生效状态</div>
+                  <div className="text-xs text-slate-500 font-medium">默认以 Telegram 端为准；后台仅在手动覆盖时写入</div>
                 </div>
                 <button
                   onClick={refreshMenuButton}
@@ -235,6 +336,28 @@ const SystemSettings = () => {
                     <div className="text-slate-500 font-semibold">类型</div>
                     <div className="font-mono font-bold text-slate-900">{menuInfo?.type || '-'}</div>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-slate-500 font-semibold">来源</div>
+                    <div className="font-bold text-slate-900">
+                      {overridesInfo?.overrides?.menuButton?.mode === 'override' ? '后台手动覆盖' : 'Telegram 端'}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-slate-500 font-semibold">消息内 WebApp URL</div>
+                    <div className="font-mono text-xs text-slate-900 break-all">
+                      {menuInfo?.type === 'web_app'
+                        ? menuInfo?.web_app?.url || '-'
+                        : overridesInfo?.runtime?.webAppUrlDefault || '-'}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-medium">
+                      来源：{menuInfo?.type === 'web_app' ? 'Telegram 端（Menu Button）' : '代码默认（WEB_APP_URL）'}
+                    </div>
+                  </div>
+                  {menuInfo?.type !== 'web_app' ? (
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 font-medium leading-relaxed">
+                      当前不是 WebApp 菜单按钮，客户端会显示 Menu/命令。若需“漫剧世界”直达 WebApp，请在 Telegram 端设置或在此手动覆盖。
+                    </div>
+                  ) : null}
                   {menuInfo?.type === 'web_app' ? (
                     <>
                       <div className="flex items-center justify-between">
@@ -247,6 +370,42 @@ const SystemSettings = () => {
                       </div>
                     </>
                   ) : null}
+                  <div className="space-y-1 pt-2 border-t border-slate-200">
+                    <div className="text-xs text-slate-500 font-medium">手动覆盖（可选）</div>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={menuDraft.text}
+                        onChange={(e) => setMenuDraft((d) => ({ ...d, text: e.target.value }))}
+                        className="w-full h-10 bg-slate-100 border border-slate-200 rounded-xl px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        placeholder="按钮文案（例如：漫剧世界）"
+                      />
+                      <input
+                        type="text"
+                        value={menuDraft.url}
+                        onChange={(e) => setMenuDraft((d) => ({ ...d, url: e.target.value }))}
+                        className="w-full h-10 bg-slate-100 border border-slate-200 rounded-xl px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        placeholder="WebApp URL（例如：https://manju-jade.vercel.app）"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={applyMenuOverride}
+                          className="flex-1 h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors"
+                        >
+                          覆盖为 WebApp
+                        </button>
+                        <button
+                          onClick={clearMenuOverride}
+                          className="flex-1 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
+                        >
+                          清除覆盖
+                        </button>
+                      </div>
+                      {overridesInfo?.overrides?.menuButton?.updatedAtIso ? (
+                        <div className="text-[11px] text-slate-500 font-medium">覆盖记录更新时间：{overridesInfo.overrides.menuButton.updatedAtIso}</div>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -291,7 +450,7 @@ const SystemSettings = () => {
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="text-base font-black text-slate-900">Telegram 命令列表</div>
-                  <div className="text-xs text-slate-500 font-medium">只读显示当前 getMyCommands(default)</div>
+                  <div className="text-xs text-slate-500 font-medium">默认以 Telegram 端为准；后台仅在手动覆盖时写入</div>
                 </div>
                 <button
                   onClick={refreshCommands}
@@ -307,6 +466,12 @@ const SystemSettings = () => {
                 <div className="text-sm text-rose-700 font-semibold">{commandsError}</div>
               ) : (
                 <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="text-slate-500 font-semibold">来源</div>
+                    <div className="font-bold text-slate-900">
+                      {overridesInfo?.overrides?.commands?.mode === 'override' ? '后台手动覆盖' : 'Telegram 端'}
+                    </div>
+                  </div>
                   {(commandsInfo?.commands || []).length === 0 ? (
                     <div className="text-slate-500 font-semibold">暂无命令</div>
                   ) : (
@@ -319,6 +484,32 @@ const SystemSettings = () => {
                       ))}
                     </div>
                   )}
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <div className="text-xs text-slate-500 font-medium">手动覆盖（JSON 数组）</div>
+                    <textarea
+                      rows={5}
+                      value={commandsDraft}
+                      onChange={(e) => setCommandsDraft(e.target.value)}
+                      className="w-full bg-slate-100 border border-slate-200 rounded-xl py-2 px-3 text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={applyCommandsOverride}
+                        className="flex-1 h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors"
+                      >
+                        覆盖命令
+                      </button>
+                      <button
+                        onClick={clearCommandsOverride}
+                        className="flex-1 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
+                      >
+                        清除覆盖
+                      </button>
+                    </div>
+                    {overridesInfo?.overrides?.commands?.updatedAtIso ? (
+                      <div className="text-[11px] text-slate-500 font-medium">覆盖记录更新时间：{overridesInfo.overrides.commands.updatedAtIso}</div>
+                    ) : null}
+                  </div>
                 </div>
               )}
             </div>
@@ -327,7 +518,7 @@ const SystemSettings = () => {
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="text-base font-black text-slate-900">Webhook 状态</div>
-                  <div className="text-xs text-slate-500 font-medium">只读显示当前 getWebhookInfo</div>
+                  <div className="text-xs text-slate-500 font-medium">Webhook 与轮询二选一；本系统默认使用轮询</div>
                 </div>
                 <button
                   onClick={refreshWebhook}
@@ -343,10 +534,29 @@ const SystemSettings = () => {
                 <div className="text-sm text-rose-700 font-semibold">{webhookError}</div>
               ) : (
                 <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="text-slate-500 font-semibold">来源</div>
+                    <div className="font-bold text-slate-900">
+                      {overridesInfo?.overrides?.webhook?.mode === 'override' ? '后台手动处理' : 'Telegram 端'}
+                    </div>
+                  </div>
                   <div className="space-y-1">
                     <div className="text-slate-500 font-semibold">URL</div>
                     <div className="font-mono text-xs text-slate-900 break-all">{webhookInfo?.url || '-'}</div>
                   </div>
+                  {webhookInfo?.url ? (
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 font-medium leading-relaxed">
+                      当前已配置 Webhook，会影响轮询收消息。建议删除 Webhook。
+                    </div>
+                  ) : null}
+                  {webhookInfo?.url ? (
+                    <button
+                      onClick={deleteWebhook}
+                      className="w-full h-10 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition-colors"
+                    >
+                      删除 Webhook（启用轮询）
+                    </button>
+                  ) : null}
                   <div className="flex items-center justify-between">
                     <div className="text-slate-500 font-semibold">待处理更新</div>
                     <div className="font-mono font-bold text-slate-900">{webhookInfo?.pending_update_count ?? '-'}</div>
@@ -395,15 +605,20 @@ const SystemSettings = () => {
                             <div className="font-mono text-xs text-slate-900">{it.trialGroupId || '-'}</div>
                           </div>
                           <div className="text-xs text-slate-600 font-medium">
-                            {it.trial?.ok ? `status=${it.trial.status || '-'} can_invite_users=${String(Boolean(it.trial.can_invite_users))}` : `error=${it.trial?.error || 'unknown'}`}
+                            {it.trial?.ok ? `status=${it.trial.status || '-'} can_invite_users=${String(Boolean(it.trial.can_invite_users))} public=${String(Boolean(it.trial?.chat?.username))}` : `error=${it.trial?.error || 'unknown'}`}
                           </div>
                           <div className="flex items-center justify-between gap-3">
                             <div className="text-slate-500 font-semibold">VIP群</div>
                             <div className="font-mono text-xs text-slate-900">{it.vipGroupId || '-'}</div>
                           </div>
                           <div className="text-xs text-slate-600 font-medium">
-                            {it.vip?.ok ? `status=${it.vip.status || '-'} can_manage_chat=${String(Boolean(it.vip.can_manage_chat))}` : `error=${it.vip?.error || 'unknown'}`}
+                            {it.vip?.ok ? `status=${it.vip.status || '-'} can_manage_chat=${String(Boolean(it.vip.can_manage_chat))} public=${String(Boolean(it.vip?.chat?.username))}` : `error=${it.vip?.error || 'unknown'}`}
                           </div>
+                          {it.vip?.ok && it.vip?.chat?.username ? (
+                            <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 font-medium leading-relaxed">
+                              VIP群为公开群（存在 username），用户可绕过申请直接加入。若需严格控制，请将 VIP 群改为私密或关闭公开加入入口。
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     ))}

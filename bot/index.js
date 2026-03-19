@@ -141,6 +141,7 @@ const getConfig = async () => {
     key: 'default',
     settings: store.settings || {},
     payment: store.payment || {},
+    telegramOverrides: store.telegramOverrides || {},
     plans: store.plans || DEFAULT_PLANS,
   };
 };
@@ -638,20 +639,39 @@ app.get('/api/admin/telegram/menu-button', (req, res) => {
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
 
+const saveTelegramOverrides = async (nextOverrides) => {
+  if (mongoReady) {
+    await Config.updateOne({ key: 'default' }, { $set: { telegramOverrides: nextOverrides } }, { upsert: true });
+    return;
+  }
+  const store = loadStore();
+  saveStore({ ...store, telegramOverrides: nextOverrides });
+};
+
 app.post('/api/admin/telegram/menu-button', (req, res) => {
   (async () => {
     const body = req.body || {};
     const action = String(body.action || '');
-    if (action === 'reset') {
-      const r = await bot.telegram.callApi('setChatMenuButton', { menu_button: { type: 'default' } });
-      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
+    const cfg = await getConfig();
+    const prevOverrides = cfg.telegramOverrides || {};
+    const nextOverrides = { ...prevOverrides, menuButton: { ...(prevOverrides.menuButton || {}) } };
+
+    if (action === 'clear_override' || action === 'reset') {
+      nextOverrides.menuButton = { mode: 'inherit', text: '', url: '', updatedAtIso: dateNowIso() };
+      await saveTelegramOverrides(nextOverrides);
+      cachedMenuButton = { at: 0, value: null };
+      return res.json({ success: true, overrides: nextOverrides.menuButton, updatedAt: dateNowIso() });
     }
-    if (action === 'web_app') {
+    if (action === 'override_web_app' || action === 'web_app') {
       const text = String(body.text || '').trim();
       const url = String(body.url || '').trim();
       if (!text || !url) return res.status(400).json({ success: false, message: '参数缺失' });
       const r = await bot.telegram.callApi('setChatMenuButton', { menu_button: { type: 'web_app', text, web_app: { url } } });
-      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
+      nextOverrides.menuButton = { mode: 'override', text, url, updatedAtIso: dateNowIso() };
+      await saveTelegramOverrides(nextOverrides);
+      cachedMenuButton = { at: 0, value: null };
+      const current = await bot.telegram.callApi('getChatMenuButton', {});
+      return res.json({ success: true, result: r, overrides: nextOverrides.menuButton, menu_button: current?.menu_button || current || null, updatedAt: dateNowIso() });
     }
     return res.status(400).json({ success: false, message: '不支持的操作' });
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
@@ -677,17 +697,25 @@ app.post('/api/admin/telegram/commands', (req, res) => {
     const body = req.body || {};
     const action = String(body.action || '');
     const scope = { type: 'default' };
-    if (action === 'reset') {
-      const r = await bot.telegram.callApi('deleteMyCommands', { scope });
-      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
+    const cfg = await getConfig();
+    const prevOverrides = cfg.telegramOverrides || {};
+    const nextOverrides = { ...prevOverrides, commands: { ...(prevOverrides.commands || {}) } };
+
+    if (action === 'clear_override' || action === 'reset') {
+      nextOverrides.commands = { mode: 'inherit', list: [], updatedAtIso: dateNowIso() };
+      await saveTelegramOverrides(nextOverrides);
+      return res.json({ success: true, overrides: nextOverrides.commands, updatedAt: dateNowIso() });
     }
-    if (action === 'set') {
+    if (action === 'override_set' || action === 'set') {
       const commands = Array.isArray(body.commands) ? body.commands : [];
       const sanitized = commands
         .map((c) => ({ command: String(c?.command || '').trim(), description: String(c?.description || '').trim() }))
         .filter((c) => c.command && c.description);
       const r = await bot.telegram.callApi('setMyCommands', { scope, commands: sanitized });
-      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
+      nextOverrides.commands = { mode: 'override', list: sanitized, updatedAtIso: dateNowIso() };
+      await saveTelegramOverrides(nextOverrides);
+      const current = await bot.telegram.callApi('getMyCommands', { scope });
+      return res.json({ success: true, result: r, overrides: nextOverrides.commands, commands: Array.isArray(current) ? current : [], updatedAt: dateNowIso() });
     }
     return res.status(400).json({ success: false, message: '不支持的操作' });
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
@@ -707,15 +735,30 @@ app.post('/api/admin/telegram/webhook', (req, res) => {
     if (action === 'delete') {
       const drop = Boolean(body.drop_pending_updates);
       const r = await bot.telegram.callApi('deleteWebhook', { drop_pending_updates: drop });
-      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
-    }
-    if (action === 'set') {
-      const url = String(body.url || '').trim();
-      if (!url) return res.status(400).json({ success: false, message: '参数缺失' });
-      const r = await bot.telegram.callApi('setWebhook', { url });
+      const cfg = await getConfig();
+      const prevOverrides = cfg.telegramOverrides || {};
+      const nextOverrides = { ...prevOverrides, webhook: { ...(prevOverrides.webhook || {}) } };
+      nextOverrides.webhook = { mode: 'override', url: '', updatedAtIso: dateNowIso() };
+      await saveTelegramOverrides(nextOverrides);
       return res.json({ success: true, result: r, updatedAt: dateNowIso() });
     }
     return res.status(400).json({ success: false, message: '不支持的操作' });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.get('/api/admin/telegram/overrides', (req, res) => {
+  (async () => {
+    const cfg = await getConfig();
+    const overrides = cfg.telegramOverrides || {};
+    return res.json({
+      overrides,
+      runtime: {
+        webAppUrlDefault: WEB_APP_URL,
+        hasMongoUri: HAS_MONGO_URI,
+        mongoReady: Boolean(mongoReady),
+      },
+      updatedAt: dateNowIso(),
+    });
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
 
@@ -737,8 +780,22 @@ app.get('/api/admin/telegram/group-check', (req, res) => {
         if (!chatId) return { ok: false, error: 'not_set' };
         if (!/^[-]?\d+$/.test(chatId)) return { ok: false, error: 'not_chat_id' };
         try {
+          const chat = await bot.telegram.callApi('getChat', { chat_id: chatId }).catch(() => null);
           const cm = await bot.telegram.callApi('getChatMember', { chat_id: chatId, user_id: botId });
-          return { ok: true, status: cm?.status || '', can_invite_users: cm?.can_invite_users, can_restrict_members: cm?.can_restrict_members, can_manage_chat: cm?.can_manage_chat };
+          return {
+            ok: true,
+            status: cm?.status || '',
+            can_invite_users: cm?.can_invite_users,
+            can_restrict_members: cm?.can_restrict_members,
+            can_manage_chat: cm?.can_manage_chat,
+            chat: chat
+              ? {
+                  type: chat?.type || '',
+                  title: chat?.title || '',
+                  username: chat?.username || '',
+                }
+              : null,
+          };
         } catch (e) {
           return { ok: false, error: e?.description || e?.message || 'unknown' };
         }

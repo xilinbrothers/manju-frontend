@@ -21,6 +21,32 @@ const ConfigSchema = new mongoose.Schema(
         productId: { type: String, default: '' },
       },
     },
+    telegramOverrides: {
+      menuButton: {
+        mode: { type: String, default: 'inherit' },
+        text: { type: String, default: '' },
+        url: { type: String, default: '' },
+        updatedAtIso: { type: String, default: '' },
+      },
+      commands: {
+        mode: { type: String, default: 'inherit' },
+        list: {
+          type: [
+            {
+              command: { type: String, default: '' },
+              description: { type: String, default: '' },
+            },
+          ],
+          default: [],
+        },
+        updatedAtIso: { type: String, default: '' },
+      },
+      webhook: {
+        mode: { type: String, default: 'inherit' },
+        url: { type: String, default: '' },
+        updatedAtIso: { type: String, default: '' },
+      },
+    },
     plans: {
       type: [
         {
