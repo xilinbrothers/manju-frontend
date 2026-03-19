@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
+import { getApiBaseUrl } from '../utils/api';
 
 const PaymentConfig = () => {
   const [draft, setDraft] = useState({
-    alipay: { merchantNo: '', merchantKey: '', apiUrl: '' },
+    alipay: { merchantNo: '', merchantKey: '', apiUrl: '', productId: '' },
   });
   const [error, setError] = useState('');
 
@@ -16,6 +17,7 @@ const PaymentConfig = () => {
           merchantNo: data?.payment?.alipay?.merchantNo || '',
           merchantKey: data?.payment?.alipay?.merchantKey || '',
           apiUrl: data?.payment?.alipay?.apiUrl || '',
+          productId: data?.payment?.alipay?.productId || '',
         },
       });
     } catch (e) {
@@ -75,19 +77,19 @@ const PaymentConfig = () => {
 
           <div className="mt-6 space-y-4 flex-1">
             <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">接口 URL</label>
+              <label className="text-sm font-bold text-slate-700">下单地址 (Base URL)</label>
               <input
                 type="text"
                 value={draft.alipay.apiUrl}
                 onChange={(e) => setDraft((d) => ({ ...d, alipay: { ...d.alipay, apiUrl: e.target.value } }))}
                 className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                placeholder="https://pay.example.com"
+                placeholder="http://host:port"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700">商户号</label>
+                <label className="text-sm font-bold text-slate-700">商户编号 (merchant_no)</label>
                 <input
                   type="text"
                   value={draft.alipay.merchantNo}
@@ -102,7 +104,18 @@ const PaymentConfig = () => {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">商户密钥</label>
+              <label className="text-sm font-bold text-slate-700">产品编号 (product_id)</label>
+              <input
+                type="text"
+                value={draft.alipay.productId}
+                onChange={(e) => setDraft((d) => ({ ...d, alipay: { ...d.alipay, productId: e.target.value } }))}
+                className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="如支付平台要求填写通道编码/产品编号"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-700">商户密钥 (key)</label>
               <input
                 type="password"
                 value={draft.alipay.merchantKey}
@@ -117,7 +130,7 @@ const PaymentConfig = () => {
                 type="text"
                 readOnly
                 className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-slate-500 font-mono text-xs cursor-not-allowed"
-                value="http://localhost:3000/api/order/notify"
+                value={`${getApiBaseUrl()}/api/order/notify`}
               />
             </div>
           </div>

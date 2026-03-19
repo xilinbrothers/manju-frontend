@@ -25,6 +25,7 @@ const defaultStore = () => ({
       merchantNo: '',
       merchantKey: '',
       apiUrl: '',
+      productId: '',
     },
   },
   plans: [

@@ -582,6 +582,7 @@ app.post('/api/admin/payment', (req, res) => {
           merchantNo: body?.alipay?.merchantNo !== undefined ? String(body.alipay.merchantNo || '') : prev.payment?.alipay?.merchantNo || '',
           merchantKey: body?.alipay?.merchantKey !== undefined ? String(body.alipay.merchantKey || '') : prev.payment?.alipay?.merchantKey || '',
           apiUrl: body?.alipay?.apiUrl !== undefined ? String(body.alipay.apiUrl || '') : prev.payment?.alipay?.apiUrl || '',
+          productId: body?.alipay?.productId !== undefined ? String(body.alipay.productId || '') : prev.payment?.alipay?.productId || '',
         },
       };
       await Config.updateOne({ key: 'default' }, { $set: { payment: nextPayment } }, { upsert: true });
@@ -594,6 +595,7 @@ app.post('/api/admin/payment', (req, res) => {
         merchantNo: body?.alipay?.merchantNo !== undefined ? String(body.alipay.merchantNo || '') : store.payment?.alipay?.merchantNo || '',
         merchantKey: body?.alipay?.merchantKey !== undefined ? String(body.alipay.merchantKey || '') : store.payment?.alipay?.merchantKey || '',
         apiUrl: body?.alipay?.apiUrl !== undefined ? String(body.alipay.apiUrl || '') : store.payment?.alipay?.apiUrl || '',
+        productId: body?.alipay?.productId !== undefined ? String(body.alipay.productId || '') : store.payment?.alipay?.productId || '',
       },
     };
     const next = saveStore({ ...store, payment: nextPayment });
@@ -908,12 +910,13 @@ app.get('/api/order/alipay', async (req, res) => {
     if (!merchantNo || !merchantKey || !apiUrl) return res.status(400).send('支付宝参数未配置');
 
     const notifyUrl = `${getApiBaseUrlForBrowser(req)}/api/order/notify`;
+    const productId = cfg.payment?.alipay?.productId ? String(cfg.payment.alipay.productId) : String(order.seriesId || '');
     const params = {
       merchant_no: merchantNo,
       out_order_no: orderId,
       notify_url: notifyUrl,
       amount: Math.round(Number(order.amountCny || 0) * 100),
-      product_id: order.seriesId,
+      product_id: productId,
     };
     const sign = generateAlipaySign(params, merchantKey);
     const body = new URLSearchParams({ ...params, sign }).toString();

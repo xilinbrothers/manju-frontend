@@ -18,6 +18,7 @@ const ConfigSchema = new mongoose.Schema(
         merchantNo: { type: String, default: '' },
         merchantKey: { type: String, default: '' },
         apiUrl: { type: String, default: '' },
+        productId: { type: String, default: '' },
       },
     },
     plans: {
