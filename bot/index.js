@@ -1083,7 +1083,7 @@ app.post('/api/orders', telegramAuth, async (req, res) => {
     const plan = (series.plans || []).find((p) => p.id === plan_id);
     if (!plan || plan.enabled === false) return res.status(400).json({ success: false, message: '套餐不可用' });
 
-    const orderId = `ord_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const orderId = `ord_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const amountCny = Number(plan.priceCny || 0) || 0;
     const amountFen = Math.round(amountCny * 100);
     if (!Number.isFinite(amountFen) || amountFen <= 0) {
@@ -1099,6 +1099,9 @@ app.post('/api/orders', telegramAuth, async (req, res) => {
       amountCny,
       paymentMethod: String(payment_method),
       status: 'created',
+      payUrl: '',
+      upstreamOrderNo: '',
+      payCreatedAtIso: '',
       createdAtIso: dateNowIso(),
     };
     if (mongoReady) {
@@ -1147,6 +1150,7 @@ app.get('/api/order/alipay', async (req, res) => {
       return store.orders?.[orderId] || null;
     })();
     if (!order) return res.status(404).send('订单不存在');
+    if (order?.payUrl) return res.redirect(String(order.payUrl));
 
     const merchantNo = cfg.payment?.alipay?.merchantNo || process.env.ALIPAY_MERCHANT_NO || '';
     const merchantKey = cfg.payment?.alipay?.merchantKey || process.env.ALIPAY_MERCHANT_KEY || '';
@@ -1183,16 +1187,114 @@ app.get('/api/order/alipay', async (req, res) => {
       }
     })();
     if (!resp.ok) {
-      const msg = json?.message || text || `上游状态码: ${resp.status}`;
-      return res.status(502).send(`支付宝下单失败：${String(msg).slice(0, 500)}`);
+      const msg = String(json?.message || text || `上游状态码: ${resp.status}`);
+      if (msg.includes('已存在')) {
+        if (order?.payUrl) return res.redirect(String(order.payUrl));
+        return res.status(409).send(`支付宝下单失败：${msg.slice(0, 500)}。请返回重新发起支付获取新订单号。`);
+      }
+      return res.status(502).send(`支付宝下单失败：${msg.slice(0, 500)}`);
     }
     if (!json?.success || !json?.result?.url) {
       const msg = json?.message || '缺少支付链接';
       return res.status(502).send(`支付宝下单失败：${String(msg).slice(0, 500)}`);
     }
+    const payUrl = String(json.result.url || '');
+    const upstreamOrderNo = String(json?.result?.orderNo || '');
+    if (mongoReady) {
+      await Order.updateOne({ id: orderId }, { $set: { payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying' } });
+    } else {
+      const store = loadStore();
+      const prev = store.orders?.[orderId] || order;
+      saveStore({
+        ...store,
+        orders: {
+          ...(store.orders || {}),
+          [orderId]: { ...prev, payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying' },
+        },
+      });
+    }
     res.redirect(json.result.url);
   } catch (e) {
     res.status(500).send(`支付宝下单失败：${String(e?.message || 'unknown').slice(0, 500)}`);
+  }
+});
+
+app.get('/api/order/alipay-url', async (req, res) => {
+  try {
+    const orderId = req.query.order_id;
+    const cfg = await getConfig();
+    const order = mongoReady ? await Order.findOne({ id: orderId }).lean() : (() => {
+      const store = loadStore();
+      return store.orders?.[orderId] || null;
+    })();
+    if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (order?.payUrl) return res.json({ success: true, url: String(order.payUrl), order_id: orderId });
+
+    const merchantNo = cfg.payment?.alipay?.merchantNo || process.env.ALIPAY_MERCHANT_NO || '';
+    const merchantKey = cfg.payment?.alipay?.merchantKey || process.env.ALIPAY_MERCHANT_KEY || '';
+    const apiUrl = cfg.payment?.alipay?.apiUrl || process.env.ALIPAY_API_URL || '';
+    if (!merchantNo || !merchantKey || !apiUrl) return res.status(400).json({ success: false, message: '支付宝参数未配置' });
+
+    const apiUrlTrimmed = String(apiUrl || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(apiUrlTrimmed)) return res.status(400).json({ success: false, message: '支付宝接口URL不合法' });
+    const createUrl = /\/api\/order\/create$/i.test(apiUrlTrimmed) ? apiUrlTrimmed : `${apiUrlTrimmed}/api/order/create`;
+    const notifyUrl = `${getApiBaseUrlForBrowser(req)}/api/order/notify`;
+    const productId = cfg.payment?.alipay?.productId ? String(cfg.payment.alipay.productId) : String(order.seriesId || '');
+    const amountFen = Math.round(Number(order.amountCny || 0) * 100);
+    if (!Number.isFinite(amountFen) || amountFen <= 0) return res.status(400).json({ success: false, message: '下单金额不合法（需至少 0.01 元）' });
+
+    const params = {
+      merchant_no: merchantNo,
+      out_order_no: orderId,
+      notify_url: notifyUrl,
+      amount: amountFen,
+      product_id: productId,
+    };
+    const sign = generateAlipaySign(params, merchantKey);
+    const body = new URLSearchParams({ ...params, sign }).toString();
+    const resp = await fetch(createUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    const text = await resp.text().catch(() => '');
+    const json = (() => {
+      try {
+        return JSON.parse(text || '');
+      } catch {
+        return null;
+      }
+    })();
+    const msg = String(json?.message || text || `上游状态码: ${resp.status}`);
+    if (!resp.ok) {
+      if (msg.includes('已存在')) {
+        if (order?.payUrl) return res.json({ success: true, url: String(order.payUrl), order_id: orderId });
+        return res.status(409).json({ success: false, message: `订单号已存在，请返回重新发起支付获取新订单号。`, raw: json || text });
+      }
+      return res.status(502).json({ success: false, message: msg.slice(0, 500), raw: json || text });
+    }
+    if (!json?.success || !json?.result?.url) {
+      return res.status(502).json({ success: false, message: msg.slice(0, 500), raw: json || text });
+    }
+
+    const payUrl = String(json.result.url || '');
+    const upstreamOrderNo = String(json?.result?.orderNo || '');
+    if (mongoReady) {
+      await Order.updateOne({ id: orderId }, { $set: { payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying' } });
+    } else {
+      const store = loadStore();
+      const prev = store.orders?.[orderId] || order;
+      saveStore({
+        ...store,
+        orders: {
+          ...(store.orders || {}),
+          [orderId]: { ...prev, payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying' },
+        },
+      });
+    }
+    return res.json({ success: true, url: payUrl, order_id: orderId });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e?.message || 'server_error' });
   }
 });
 

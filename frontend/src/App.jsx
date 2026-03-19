@@ -77,8 +77,13 @@ const App = () => {
       if (!res.ok || !data?.success) throw new Error(data?.message || `创建订单失败: ${res.status}`);
 
       if (data?.pay?.type === 'alipay' && data?.pay?.url) {
-        window.open(data.pay.url, '_blank');
-        alert('请在新打开的页面中完成支付，支付成功后返回查看“我的订阅”。');
+        const orderId = data?.order_id;
+        const finalUrl = orderId ? `${baseUrl}/api/order/alipay-url?order_id=${encodeURIComponent(orderId)}` : data.pay.url;
+        if (window.Telegram?.WebApp?.openLink) {
+          window.Telegram.WebApp.openLink(finalUrl);
+          return;
+        }
+        window.open(finalUrl, '_blank');
         return;
       }
 
