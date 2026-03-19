@@ -3,6 +3,7 @@ import WelcomePage from './pages/WelcomePage';
 import SeriesListPage from './pages/SeriesListPage';
 import PlansPage from './pages/PlansPage';
 import MySubscriptionsPage from './pages/MySubscriptionsPage';
+import PayRedirectPage from './pages/PayRedirectPage';
 // AdminApp 不需要在 App.jsx 中导入，因为它在 main.jsx 中通过路由直接使用
 import { getTranslation } from './utils/i18n';
 import { apiFetchJson, getApiBaseUrl } from './utils/api';
@@ -11,6 +12,7 @@ const App = () => {
   const [currentPage, setCurrentPage] = useState('welcome');
   const [selectedSeries, setSelectedSeries] = useState(null);
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [payOrderId, setPayOrderId] = useState('');
 
   // 多语言支持
   const lang = useMemo(() => {
@@ -77,13 +79,10 @@ const App = () => {
       if (!res.ok || !data?.success) throw new Error(data?.message || `创建订单失败: ${res.status}`);
 
       if (data?.pay?.type === 'alipay' && data?.pay?.url) {
-        const orderId = data?.order_id;
-        const finalUrl = orderId ? `${baseUrl}/api/order/alipay-url?order_id=${encodeURIComponent(orderId)}` : data.pay.url;
-        if (window.Telegram?.WebApp?.openLink) {
-          window.Telegram.WebApp.openLink(finalUrl);
-          return;
-        }
-        window.open(finalUrl, '_blank');
+        const orderId = String(data?.order_id || '');
+        if (!orderId) throw new Error('缺少订单号');
+        setPayOrderId(orderId);
+        navigate('pay-redirect');
         return;
       }
 
@@ -129,6 +128,7 @@ const App = () => {
         if (currentPage === 'series') navigate('welcome');
         else if (currentPage === 'plans') navigate('series');
         else if (currentPage === 'payment') navigate('plans');
+        else if (currentPage === 'pay-redirect') navigate('payment');
         else navigate('welcome');
       };
       tg.onEvent('backButtonClicked', handleBack);
@@ -182,6 +182,14 @@ const App = () => {
             onSelectPlan={setSelectedPlan} 
             onNavigate={navigate} 
             t={t}
+          />
+        );
+      case 'pay-redirect':
+        return (
+          <PayRedirectPage
+            orderId={payOrderId}
+            onGoMySubs={() => navigate('my-subs')}
+            onBackToPayment={() => navigate('payment')}
           />
         );
       case 'payment':
