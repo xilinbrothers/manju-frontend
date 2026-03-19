@@ -264,10 +264,11 @@ const createSingleUseInviteLink = async (groupId) => {
 
 const createJoinRequestInviteLink = async (groupId) => {
   if (!groupId) throw new Error('未配置群组 ID');
-  const expireDate = Math.floor((Date.now() + 7 * 24 * 60 * 60 * 1000) / 1000);
+  const expireDate = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
   const result = await bot.telegram.createChatInviteLink(groupId, {
     expire_date: expireDate,
     creates_join_request: true,
+    member_limit: 1,
   });
   return result.invite_link;
 };
@@ -1338,9 +1339,9 @@ bot.on('chat_join_request', async (ctx) => {
       sub = store.users?.[userId]?.subscriptions?.[series.id] || null;
     }
 
-    const planDays = Number(sub?.planDays || 0);
+    const planDays = sub ? Number(sub.planDays || 0) : NaN;
     const expireAt = sub?.expireAt ? new Date(sub.expireAt).getTime() : 0;
-    const ok = planDays === 0 || (expireAt && expireAt > Date.now());
+    const ok = Boolean(sub) && (planDays === 0 || (expireAt && expireAt > Date.now()));
     if (!ok) {
       try {
         await bot.telegram.declineChatJoinRequest(chatId, userId);
