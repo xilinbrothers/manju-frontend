@@ -1033,13 +1033,7 @@ const startBot = async (attempt = 1) => {
       );
     } catch {}
     try {
-      await bot.telegram.setChatMenuButton({
-        menu_button: {
-          type: 'web_app',
-          text: '漫剧商城',
-          web_app: { url: WEB_APP_URL },
-        },
-      });
+      await bot.telegram.setChatMenuButton({ menu_button: { type: 'default' } });
     } catch {}
   } catch (e) {
     const msg = e?.message || e;
