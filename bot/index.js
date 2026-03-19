@@ -236,7 +236,7 @@ const computeStatus = (expireAtIso, expiringDays) => {
 const generateAlipaySign = (params, merchantKey) => {
   const filtered = Object.entries(params)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([k, v]) => `${k}=${v}`)
     .join('&');
   const stringSignTemp = `${filtered}&key=${merchantKey}`;
@@ -1163,6 +1163,54 @@ app.get('/api/order/alipay', async (req, res) => {
   }
 });
 
+app.get('/api/order/check', async (req, res) => {
+  try {
+    const orderId = req.query.order_id;
+    const cfg = await getConfig();
+    const order = mongoReady ? await Order.findOne({ id: orderId }).lean() : (() => {
+      const store = loadStore();
+      return store.orders?.[orderId] || null;
+    })();
+    if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+
+    const merchantNo = cfg.payment?.alipay?.merchantNo || process.env.ALIPAY_MERCHANT_NO || '';
+    const merchantKey = cfg.payment?.alipay?.merchantKey || process.env.ALIPAY_MERCHANT_KEY || '';
+    const apiUrl = cfg.payment?.alipay?.apiUrl || process.env.ALIPAY_API_URL || '';
+    if (!merchantNo || !merchantKey || !apiUrl) return res.status(400).json({ success: false, message: '支付宝参数未配置' });
+
+    const apiUrlTrimmed = String(apiUrl || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(apiUrlTrimmed)) return res.status(400).json({ success: false, message: '支付宝接口URL不合法' });
+    const checkUrl = /\/api\/order\/check$/i.test(apiUrlTrimmed) ? apiUrlTrimmed : `${apiUrlTrimmed}/api/order/check`;
+    const params = {
+      merchant_no: merchantNo,
+      out_order_no: orderId,
+    };
+    const sign = generateAlipaySign(params, merchantKey);
+    const body = new URLSearchParams({ ...params, sign }).toString();
+    const resp = await fetch(checkUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    const text = await resp.text().catch(() => '');
+    const json = (() => {
+      try {
+        return JSON.parse(text || '');
+      } catch {
+        return null;
+      }
+    })();
+    if (!resp.ok) {
+      const msg = json?.message || text || `上游状态码: ${resp.status}`;
+      return res.status(502).json({ success: false, message: `查单失败：${String(msg).slice(0, 500)}` });
+    }
+    const status = String(json?.result?.status ?? '');
+    return res.json({ success: true, order_id: orderId, status, raw: json, updatedAt: dateNowIso() });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e?.message || 'server_error' });
+  }
+});
+
 app.post('/api/order/notify', async (req, res) => {
   try {
     const cfg = await getConfig();
@@ -1202,7 +1250,7 @@ app.post('/api/order/notify', async (req, res) => {
       saveStore(next);
     }
 
-    if (status === 'success' || status === 'paid') {
+    if (status === 'success' || status === 'paid' || status === '2' || status === 2) {
       await activateSubscription({ orderId: outOrderNo, telegramId: order.telegramId });
     } else {
       if (mongoReady) {
