@@ -27,13 +27,32 @@ const WEB_APP_URL = process.env.WEB_APP_URL || 'http://localhost:5173';
 const HAS_MONGO_URI = Boolean(getMongoUri());
 let mongoReady = false;
 let mongoInitLogged = false;
+let cachedMenuButton = { at: 0, value: null };
+const MENU_BUTTON_CACHE_MS = 60 * 1000;
 const DEFAULT_PLANS = [
   { id: 'plan_30d', label: '30天', days: 30, priceCny: 9.9, enabled: true },
   { id: 'plan_90d', label: '90天', days: 90, priceCny: 25.9, enabled: true },
   { id: 'plan_365d', label: '年度', days: 365, priceCny: 88.9, enabled: true },
   { id: 'plan_lifetime', label: '整部剧', days: 0, priceCny: 128.0, enabled: true },
 ];
-const buildRenewUrl = (seriesId) => `${WEB_APP_URL}/?page=plans&series_id=${encodeURIComponent(String(seriesId || ''))}`;
+const getTelegramMenuButton = async () => {
+  const now = Date.now();
+  if (cachedMenuButton.value && now - cachedMenuButton.at < MENU_BUTTON_CACHE_MS) return cachedMenuButton.value;
+  const resp = await bot.telegram.callApi('getChatMenuButton', {});
+  const btn = resp?.menu_button || resp || null;
+  cachedMenuButton = { at: now, value: btn };
+  return btn;
+};
+
+const getEffectiveWebAppUrl = async () => {
+  try {
+    const btn = await getTelegramMenuButton();
+    if (btn?.type === 'web_app' && btn?.web_app?.url) return String(btn.web_app.url);
+  } catch {}
+  return WEB_APP_URL;
+};
+
+const buildRenewUrl = async (seriesId) => `${await getEffectiveWebAppUrl()}/?page=plans&series_id=${encodeURIComponent(String(seriesId || ''))}`;
 
 const initMongo = async () => {
   try {
@@ -638,6 +657,102 @@ app.post('/api/admin/telegram/menu-button', (req, res) => {
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
 
+app.get('/api/admin/telegram/me', (req, res) => {
+  (async () => {
+    const me = await bot.telegram.callApi('getMe', {});
+    return res.json({ me, updatedAt: dateNowIso() });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.get('/api/admin/telegram/commands', (req, res) => {
+  (async () => {
+    const scope = { type: 'default' };
+    const commands = await bot.telegram.callApi('getMyCommands', { scope });
+    return res.json({ scope, commands: Array.isArray(commands) ? commands : [], updatedAt: dateNowIso() });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.post('/api/admin/telegram/commands', (req, res) => {
+  (async () => {
+    const body = req.body || {};
+    const action = String(body.action || '');
+    const scope = { type: 'default' };
+    if (action === 'reset') {
+      const r = await bot.telegram.callApi('deleteMyCommands', { scope });
+      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
+    }
+    if (action === 'set') {
+      const commands = Array.isArray(body.commands) ? body.commands : [];
+      const sanitized = commands
+        .map((c) => ({ command: String(c?.command || '').trim(), description: String(c?.description || '').trim() }))
+        .filter((c) => c.command && c.description);
+      const r = await bot.telegram.callApi('setMyCommands', { scope, commands: sanitized });
+      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
+    }
+    return res.status(400).json({ success: false, message: '不支持的操作' });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.get('/api/admin/telegram/webhook', (req, res) => {
+  (async () => {
+    const info = await bot.telegram.callApi('getWebhookInfo', {});
+    return res.json({ info, updatedAt: dateNowIso() });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.post('/api/admin/telegram/webhook', (req, res) => {
+  (async () => {
+    const body = req.body || {};
+    const action = String(body.action || '');
+    if (action === 'delete') {
+      const drop = Boolean(body.drop_pending_updates);
+      const r = await bot.telegram.callApi('deleteWebhook', { drop_pending_updates: drop });
+      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
+    }
+    if (action === 'set') {
+      const url = String(body.url || '').trim();
+      if (!url) return res.status(400).json({ success: false, message: '参数缺失' });
+      const r = await bot.telegram.callApi('setWebhook', { url });
+      return res.json({ success: true, result: r, updatedAt: dateNowIso() });
+    }
+    return res.status(400).json({ success: false, message: '不支持的操作' });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.get('/api/admin/telegram/group-check', (req, res) => {
+  (async () => {
+    const me = await bot.telegram.callApi('getMe', {});
+    const botId = me?.id;
+    if (!botId) return res.status(500).json({ success: false, message: 'bot_id_missing' });
+
+    const seriesList = mongoReady ? await Series.find({}).lean() : (loadStore().series || []);
+    const items = [];
+    for (const s of seriesList || []) {
+      const seriesId = String(s?.id || '');
+      const title = String(s?.title || '');
+      const trialGroupId = String(s?.trialGroupId || '');
+      const vipGroupId = String(s?.vipGroupId || '');
+
+      const checkOne = async (chatId) => {
+        if (!chatId) return { ok: false, error: 'not_set' };
+        if (!/^[-]?\d+$/.test(chatId)) return { ok: false, error: 'not_chat_id' };
+        try {
+          const cm = await bot.telegram.callApi('getChatMember', { chat_id: chatId, user_id: botId });
+          return { ok: true, status: cm?.status || '', can_invite_users: cm?.can_invite_users, can_restrict_members: cm?.can_restrict_members, can_manage_chat: cm?.can_manage_chat };
+        } catch (e) {
+          return { ok: false, error: e?.description || e?.message || 'unknown' };
+        }
+      };
+
+      const trial = await checkOne(trialGroupId);
+      const vip = await checkOne(vipGroupId);
+      items.push({ id: seriesId, title, trialGroupId, vipGroupId, trial, vip });
+    }
+
+    return res.json({ bot: { id: botId, username: me?.username || '' }, items, updatedAt: dateNowIso() });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
 app.get('/api/admin/stats/users', (req, res) => {
   (async () => {
     const now = Date.now();
@@ -1041,11 +1156,12 @@ bot.start(async (ctx) => {
   const username = ctx.from.first_name || '朋友';
   const cfg = await getConfig();
   const support = cfg.settings?.supportLink || 'https://t.me/manjudingyue';
+  const webAppUrl = await getEffectiveWebAppUrl();
   return ctx.reply(
     await getWelcomeMessage(username),
     Markup.inlineKeyboard([
-      [Markup.button.webApp('🎬 进入漫剧商城', WEB_APP_URL)],
-      [Markup.button.webApp('💎 我的订阅', `${WEB_APP_URL}/my-subs`)],
+      [Markup.button.webApp('🎬 进入漫剧商城', webAppUrl)],
+      [Markup.button.webApp('💎 我的订阅', `${webAppUrl}/my-subs`)],
       [Markup.button.url('📞 联系客服', support)],
     ])
   );
@@ -1105,7 +1221,7 @@ bot.on('chat_join_request', async (ctx) => {
         await bot.telegram.sendMessage(
           userId,
           `⏰ 您的《${series?.title || ''}》订阅未激活或已到期。请续费后再申请入群。`,
-          Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(series.id))]])
+          Markup.inlineKeyboard([[Markup.button.webApp('立即续费', await buildRenewUrl(series.id))]])
         );
       } catch {}
       return;
@@ -1132,19 +1248,8 @@ app.listen(PORT, () => {
 
 const startBot = async (attempt = 1) => {
   try {
-    try {
-      await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-    } catch {}
     await bot.launch();
     console.log('✅ Bot 已成功启动！');
-    try {
-      await bot.telegram.setMyCommands(
-        [
-          { command: 'start', description: '开始 / 打开主菜单' },
-        ],
-        { scope: { type: 'default' } }
-      );
-    } catch {}
   } catch (e) {
     const msg = e?.message || e;
     console.error(`❌ Bot 启动失败（第${attempt}次）：${msg}`);
@@ -1216,7 +1321,7 @@ setInterval(async () => {
           await bot.telegram.sendMessage(
             String(item.telegramId),
             `⏰ 您的《${series?.title || ''}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
-            Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
+            Markup.inlineKeyboard([[Markup.button.webApp('立即续费', await buildRenewUrl(seriesId))]])
           );
           await User.updateOne(
             { telegramId: String(item.telegramId) },
@@ -1255,7 +1360,7 @@ setInterval(async () => {
             await bot.telegram.sendMessage(
               String(item.telegramId),
               `⏰ 您的《${series?.title || ''}》订阅已到期。请续费后继续观看。`,
-              Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
+              Markup.inlineKeyboard([[Markup.button.webApp('立即续费', await buildRenewUrl(seriesId))]])
             );
           } catch {}
           await User.updateOne(
@@ -1297,7 +1402,7 @@ setInterval(async () => {
             await bot.telegram.sendMessage(
               uid,
               `⏰ 您的《${series?.title || ''}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
-              Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
+              Markup.inlineKeyboard([[Markup.button.webApp('立即续费', await buildRenewUrl(seriesId))]])
             );
             nextSub = { ...nextSub, expiringNotifiedAtIso: dateNowIso() };
           } catch {}
@@ -1313,7 +1418,7 @@ setInterval(async () => {
             await bot.telegram.sendMessage(
               uid,
               `⏰ 您的《${(store.series || []).find((s) => s.id === seriesId)?.title || ''}》订阅已到期。请续费后继续观看。`,
-              Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
+              Markup.inlineKeyboard([[Markup.button.webApp('立即续费', await buildRenewUrl(seriesId))]])
             );
           } catch {}
           nextSub = { ...nextSub, expiredHandledAtIso: dateNowIso() };

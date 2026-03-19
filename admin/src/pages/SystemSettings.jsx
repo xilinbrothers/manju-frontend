@@ -13,6 +13,18 @@ const SystemSettings = () => {
   const [menuInfo, setMenuInfo] = useState(null);
   const [menuError, setMenuError] = useState('');
   const [isMenuLoading, setIsMenuLoading] = useState(false);
+  const [botInfo, setBotInfo] = useState(null);
+  const [botError, setBotError] = useState('');
+  const [isBotLoading, setIsBotLoading] = useState(false);
+  const [commandsInfo, setCommandsInfo] = useState(null);
+  const [commandsError, setCommandsError] = useState('');
+  const [isCommandsLoading, setIsCommandsLoading] = useState(false);
+  const [webhookInfo, setWebhookInfo] = useState(null);
+  const [webhookError, setWebhookError] = useState('');
+  const [isWebhookLoading, setIsWebhookLoading] = useState(false);
+  const [groupCheck, setGroupCheck] = useState(null);
+  const [groupCheckError, setGroupCheckError] = useState('');
+  const [isGroupCheckLoading, setIsGroupCheckLoading] = useState(false);
 
   const refresh = async () => {
     try {
@@ -46,6 +58,62 @@ const SystemSettings = () => {
     }
   };
 
+  const refreshBotInfo = async () => {
+    try {
+      setBotError('');
+      setIsBotLoading(true);
+      const data = await apiFetchJson('/api/admin/telegram/me');
+      setBotInfo(data?.me || null);
+    } catch (e) {
+      setBotError(e?.message || '加载失败');
+      setBotInfo(null);
+    } finally {
+      setIsBotLoading(false);
+    }
+  };
+
+  const refreshCommands = async () => {
+    try {
+      setCommandsError('');
+      setIsCommandsLoading(true);
+      const data = await apiFetchJson('/api/admin/telegram/commands');
+      setCommandsInfo(data || null);
+    } catch (e) {
+      setCommandsError(e?.message || '加载失败');
+      setCommandsInfo(null);
+    } finally {
+      setIsCommandsLoading(false);
+    }
+  };
+
+  const refreshWebhook = async () => {
+    try {
+      setWebhookError('');
+      setIsWebhookLoading(true);
+      const data = await apiFetchJson('/api/admin/telegram/webhook');
+      setWebhookInfo(data?.info || null);
+    } catch (e) {
+      setWebhookError(e?.message || '加载失败');
+      setWebhookInfo(null);
+    } finally {
+      setIsWebhookLoading(false);
+    }
+  };
+
+  const refreshGroupCheck = async () => {
+    try {
+      setGroupCheckError('');
+      setIsGroupCheckLoading(true);
+      const data = await apiFetchJson('/api/admin/telegram/group-check');
+      setGroupCheck(data || null);
+    } catch (e) {
+      setGroupCheckError(e?.message || '加载失败');
+      setGroupCheck(null);
+    } finally {
+      setIsGroupCheckLoading(false);
+    }
+  };
+
   const save = async () => {
     try {
       setError('');
@@ -60,6 +128,9 @@ const SystemSettings = () => {
   useEffect(() => {
     refresh();
     refreshMenuButton();
+    refreshBotInfo();
+    refreshCommands();
+    refreshWebhook();
   }, []);
 
   return (
@@ -176,6 +247,167 @@ const SystemSettings = () => {
                       </div>
                     </>
                   ) : null}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-base font-black text-slate-900">Telegram Bot 信息</div>
+                  <div className="text-xs text-slate-500 font-medium">supports_inline_queries 用于核对 Inline Mode</div>
+                </div>
+                <button
+                  onClick={refreshBotInfo}
+                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
+                >
+                  刷新
+                </button>
+              </div>
+
+              {isBotLoading ? (
+                <div className="text-sm text-slate-500 font-semibold">正在加载…</div>
+              ) : botError ? (
+                <div className="text-sm text-rose-700 font-semibold">{botError}</div>
+              ) : (
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="text-slate-500 font-semibold">用户名</div>
+                    <div className="font-mono font-bold text-slate-900">@{botInfo?.username || '-'}</div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-slate-500 font-semibold">ID</div>
+                    <div className="font-mono font-bold text-slate-900">{botInfo?.id || '-'}</div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-slate-500 font-semibold">Inline</div>
+                    <div className="font-mono font-bold text-slate-900">{String(Boolean(botInfo?.supports_inline_queries))}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-base font-black text-slate-900">Telegram 命令列表</div>
+                  <div className="text-xs text-slate-500 font-medium">只读显示当前 getMyCommands(default)</div>
+                </div>
+                <button
+                  onClick={refreshCommands}
+                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
+                >
+                  刷新
+                </button>
+              </div>
+
+              {isCommandsLoading ? (
+                <div className="text-sm text-slate-500 font-semibold">正在加载…</div>
+              ) : commandsError ? (
+                <div className="text-sm text-rose-700 font-semibold">{commandsError}</div>
+              ) : (
+                <div className="space-y-2 text-sm">
+                  {(commandsInfo?.commands || []).length === 0 ? (
+                    <div className="text-slate-500 font-semibold">暂无命令</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {(commandsInfo?.commands || []).map((c) => (
+                        <div key={c.command} className="flex items-center justify-between gap-3">
+                          <div className="font-mono font-bold text-slate-900">/{c.command}</div>
+                          <div className="text-slate-600 font-medium truncate">{c.description}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-base font-black text-slate-900">Webhook 状态</div>
+                  <div className="text-xs text-slate-500 font-medium">只读显示当前 getWebhookInfo</div>
+                </div>
+                <button
+                  onClick={refreshWebhook}
+                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
+                >
+                  刷新
+                </button>
+              </div>
+
+              {isWebhookLoading ? (
+                <div className="text-sm text-slate-500 font-semibold">正在加载…</div>
+              ) : webhookError ? (
+                <div className="text-sm text-rose-700 font-semibold">{webhookError}</div>
+              ) : (
+                <div className="space-y-2 text-sm">
+                  <div className="space-y-1">
+                    <div className="text-slate-500 font-semibold">URL</div>
+                    <div className="font-mono text-xs text-slate-900 break-all">{webhookInfo?.url || '-'}</div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-slate-500 font-semibold">待处理更新</div>
+                    <div className="font-mono font-bold text-slate-900">{webhookInfo?.pending_update_count ?? '-'}</div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-slate-500 font-semibold">最后错误</div>
+                    <div className="font-mono font-bold text-slate-900">{webhookInfo?.last_error_date ? String(webhookInfo.last_error_date) : '-'}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-base font-black text-slate-900">群组权限自检</div>
+                  <div className="text-xs text-slate-500 font-medium">核对 Bot 在试看群/VIP群的权限与配置格式</div>
+                </div>
+                <button
+                  onClick={refreshGroupCheck}
+                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
+                >
+                  检查
+                </button>
+              </div>
+
+              {isGroupCheckLoading ? (
+                <div className="text-sm text-slate-500 font-semibold">正在加载…</div>
+              ) : groupCheckError ? (
+                <div className="text-sm text-rose-700 font-semibold">{groupCheckError}</div>
+              ) : !groupCheck ? (
+                <div className="text-sm text-slate-500 font-semibold">未检查</div>
+              ) : (
+                <div className="space-y-3 text-sm">
+                  <div className="text-xs text-slate-500 font-medium">Bot：@{groupCheck?.bot?.username || '-'}（{groupCheck?.bot?.id || '-'}）</div>
+                  <div className="space-y-2">
+                    {(groupCheck?.items || []).map((it) => (
+                      <div key={it.id} className="rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-black text-slate-900">{it.title || it.id}</div>
+                          <div className="font-mono text-xs text-slate-600">{it.id}</div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-slate-500 font-semibold">试看群</div>
+                            <div className="font-mono text-xs text-slate-900">{it.trialGroupId || '-'}</div>
+                          </div>
+                          <div className="text-xs text-slate-600 font-medium">
+                            {it.trial?.ok ? `status=${it.trial.status || '-'} can_invite_users=${String(Boolean(it.trial.can_invite_users))}` : `error=${it.trial?.error || 'unknown'}`}
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-slate-500 font-semibold">VIP群</div>
+                            <div className="font-mono text-xs text-slate-900">{it.vipGroupId || '-'}</div>
+                          </div>
+                          <div className="text-xs text-slate-600 font-medium">
+                            {it.vip?.ok ? `status=${it.vip.status || '-'} can_manage_chat=${String(Boolean(it.vip.can_manage_chat))}` : `error=${it.vip?.error || 'unknown'}`}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
