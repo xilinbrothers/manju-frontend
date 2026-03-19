@@ -7,6 +7,12 @@ const PayRedirectPage = ({ orderId, onGoMySubs, onBackToPayment }) => {
   const [error, setError] = useState('');
   const [statusText, setStatusText] = useState('');
   const canCopy = useMemo(() => Boolean(navigator?.clipboard?.writeText), []);
+  const skipAutoOpen = useMemo(() => {
+    const ua = String(navigator?.userAgent || '');
+    const isIOS = /iPad|iPhone|iPod/i.test(ua);
+    const isTelegram = /Telegram/i.test(ua) || Boolean(window.Telegram?.WebApp);
+    return isIOS && isTelegram;
+  }, []);
 
   const fetchPayUrl = async () => {
     const data = await apiFetchJson(`/api/order/alipay-url?order_id=${encodeURIComponent(orderId)}`);
@@ -72,7 +78,8 @@ const PayRedirectPage = ({ orderId, onGoMySubs, onBackToPayment }) => {
         const url = await fetchPayUrl();
         if (cancelled) return;
         setPayUrl(url);
-        tryOpenPayUrl(url);
+        if (skipAutoOpen) setStatusText('检测到 iOS Telegram 内置浏览器，已关闭自动跳转，请点击“打开支付页面”或“复制支付链接”。');
+        else tryOpenPayUrl(url);
       } catch (e) {
         if (cancelled) return;
         setError(e?.message || '打开支付失败');
@@ -89,7 +96,7 @@ const PayRedirectPage = ({ orderId, onGoMySubs, onBackToPayment }) => {
     return () => {
       cancelled = true;
     };
-  }, [orderId]);
+  }, [orderId, skipAutoOpen]);
 
   return (
     <div className="flex flex-col min-h-screen bg-[#0F172A] text-white p-6 pb-24">
@@ -161,4 +168,3 @@ const PayRedirectPage = ({ orderId, onGoMySubs, onBackToPayment }) => {
 };
 
 export default PayRedirectPage;
-
