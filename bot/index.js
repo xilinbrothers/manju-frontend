@@ -291,15 +291,13 @@ app.get('/api/plans', (req, res) => {
       const cfg = await getConfig();
       globalPlans = Array.isArray(cfg.plans) ? cfg.plans : [];
     }
-    
-    // 如果剧集启用了套餐覆盖，则使用剧集独立套餐；否则使用全局套餐
     let plans = [];
     if (series && series.planOverride && Array.isArray(series.plans) && series.plans.length > 0) {
       plans = series.plans;
     } else {
       plans = globalPlans;
     }
-    
+
     const mapped = plans.map((p) => {
       const days = Number(p.days || 0) || 0;
       const price = Number(p.priceCny || 0) || 0;
@@ -686,7 +684,6 @@ const activateSubscription = async ({ orderId, telegramId }) => {
     const prevExpire = prevSub?.expireAt ? new Date(prevSub.expireAt).getTime() : 0;
     const base = Math.max(now, prevExpire || 0);
     const planDays = Number(plan.days || 0);
-    // days 为 0 代表永久/整部剧，设置一个极大的过期时间（例如 100 年后）
     const expireAt = planDays === 0 
       ? new Date(base + 100 * 365 * 24 * 60 * 60 * 1000).toISOString()
       : new Date(base + planDays * 24 * 60 * 60 * 1000).toISOString();
@@ -708,6 +705,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
       status,
       vipInviteLink,
       expiringNotifiedAtIso: '',
+      expiredHandledAtIso: '',
       updatedAt: dateNowIso(),
     };
 
@@ -769,6 +767,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
     status,
     vipInviteLink,
     expiringNotifiedAtIso: '',
+    expiredHandledAtIso: '',
     updatedAt: dateNowIso(),
   };
 
@@ -1073,50 +1072,104 @@ setInterval(async () => {
 
     const expiringDays = Number(cfg.settings?.expiringDays || 7);
     if (mongoReady) {
-      const users = await User.find({}).lean();
-      const seriesList = await Series.find({}).lean();
-      for (const u of users) {
-        const subs = u.subscriptions || {};
-        const seriesIds = Object.keys(subs || {});
-        let changed = false;
-        for (const seriesId of seriesIds) {
-          const sub = subs[seriesId];
-          const nextStatus = computeStatus(sub.expireAt, expiringDays);
-          if (sub.status !== nextStatus) changed = true;
-          let nextSub = { ...sub, status: nextStatus };
-          if (nextStatus === 'expiring' && !sub.expiringNotifiedAtIso) {
-            const series = seriesList.find((s) => s.id === seriesId);
-            const remainDays = Math.max(0, Math.ceil((new Date(sub.expireAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
-            try {
-              await bot.telegram.sendMessage(
-                u.telegramId,
-                `⏰ 您的《${series?.title || ''}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
-                Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
-              );
-            } catch {}
-            nextSub = { ...nextSub, expiringNotifiedAtIso: dateNowIso() };
-            changed = true;
-          }
-          subs[seriesId] = nextSub;
-          if (nextStatus === 'expired') {
-            const series = seriesList.find((s) => s.id === seriesId);
-            if (series?.vipGroupId) {
-              try {
-                await bot.telegram.kickChatMember(series.vipGroupId, u.telegramId);
-              } catch {}
+      const nowDate = new Date();
+      const nowIso = nowDate.toISOString();
+      const thresholdDate = new Date(nowDate.getTime() + expiringDays * 24 * 60 * 60 * 1000);
+
+      const seriesList = await Series.find({}).select('id title vipGroupId').lean();
+      const seriesMap = new Map((seriesList || []).map((s) => [String(s.id), s]));
+
+      const basePipeline = [
+        { $project: { telegramId: 1, subs: { $objectToArray: '$subscriptions' } } },
+        { $unwind: '$subs' },
+        {
+          $addFields: {
+            seriesId: '$subs.k',
+            sub: '$subs.v',
+            expireDate: {
+              $dateFromString: {
+                dateString: '$subs.v.expireAt',
+                onError: null,
+                onNull: null,
+              },
+            },
+          },
+        },
+        { $match: { expireDate: { $ne: null } } },
+      ];
+
+      const expiringSubs = await User.aggregate([
+        ...basePipeline,
+        {
+          $match: {
+            'sub.planDays': { $gt: 0 },
+            expireDate: { $gt: nowDate, $lte: thresholdDate },
+            $or: [{ 'sub.expiringNotifiedAtIso': { $exists: false } }, { 'sub.expiringNotifiedAtIso': '' }],
+          },
+        },
+        { $project: { telegramId: 1, seriesId: 1, expireAt: '$sub.expireAt' } },
+      ]);
+
+      for (const item of expiringSubs || []) {
+        const seriesId = String(item.seriesId);
+        const series = seriesMap.get(seriesId);
+        const remainDays = Math.max(0, Math.ceil((new Date(item.expireAt).getTime() - nowDate.getTime()) / (24 * 60 * 60 * 1000)));
+        try {
+          await bot.telegram.sendMessage(
+            String(item.telegramId),
+            `⏰ 您的《${series?.title || ''}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
+            Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
+          );
+          await User.updateOne(
+            { telegramId: String(item.telegramId) },
+            {
+              $set: {
+                [`subscriptions.${seriesId}.expiringNotifiedAtIso`]: nowIso,
+                [`subscriptions.${seriesId}.status`]: 'expiring',
+              },
             }
+          );
+        } catch {}
+      }
+
+      const expiredSubs = await User.aggregate([
+        ...basePipeline,
+        {
+          $match: {
+            'sub.planDays': { $gt: 0 },
+            expireDate: { $lte: nowDate },
+            $or: [{ 'sub.expiredHandledAtIso': { $exists: false } }, { 'sub.expiredHandledAtIso': '' }],
+          },
+        },
+        { $project: { telegramId: 1, seriesId: 1 } },
+      ]);
+
+      for (const item of expiredSubs || []) {
+        const seriesId = String(item.seriesId);
+        const series = seriesMap.get(seriesId);
+        try {
+          if (series?.vipGroupId) {
             try {
-              await bot.telegram.sendMessage(
-                u.telegramId,
-                `⏰ 您的《${series?.title || ''}》订阅已到期。请续费后继续观看。`,
-                Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
-              );
+              await bot.telegram.kickChatMember(series.vipGroupId, String(item.telegramId));
             } catch {}
           }
-        }
-        if (changed) {
-          await User.updateOne({ telegramId: u.telegramId }, { $set: { subscriptions: subs } });
-        }
+          try {
+            await bot.telegram.sendMessage(
+              String(item.telegramId),
+              `⏰ 您的《${series?.title || ''}》订阅已到期。请续费后继续观看。`,
+              Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
+            );
+          } catch {}
+          await User.updateOne(
+            { telegramId: String(item.telegramId) },
+            {
+              $set: {
+                [`subscriptions.${seriesId}.expiredHandledAtIso`]: nowIso,
+                [`subscriptions.${seriesId}.status`]: 'expired',
+              },
+            }
+          );
+        } catch {}
       }
       try {
         const today = getDateKey(new Date());
@@ -1137,6 +1190,7 @@ setInterval(async () => {
       for (const seriesId of Object.keys(subs)) {
         const sub = subs[seriesId];
         const status = computeStatus(sub.expireAt, expiringDays);
+        if (Number(sub.planDays || 0) === 0) continue;
         let nextSub = { ...sub, status };
         if (status === 'expiring' && !sub.expiringNotifiedAtIso) {
           const series = (store.series || []).find((s) => s.id === seriesId);
@@ -1147,11 +1201,10 @@ setInterval(async () => {
               `⏰ 您的《${series?.title || ''}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
               Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
             );
+            nextSub = { ...nextSub, expiringNotifiedAtIso: dateNowIso() };
           } catch {}
-          nextSub = { ...nextSub, expiringNotifiedAtIso: dateNowIso() };
         }
-        subs[seriesId] = nextSub;
-        if (status === 'expired') {
+        if (status === 'expired' && !sub.expiredHandledAtIso) {
           const series = (store.series || []).find((s) => s.id === seriesId);
           if (series?.vipGroupId) {
             try {
@@ -1165,7 +1218,9 @@ setInterval(async () => {
               Markup.inlineKeyboard([[Markup.button.webApp('立即续费', buildRenewUrl(seriesId))]])
             );
           } catch {}
+          nextSub = { ...nextSub, expiredHandledAtIso: dateNowIso() };
         }
+        subs[seriesId] = nextSub;
       }
       users[uid] = { ...u, subscriptions: subs };
     }
