@@ -376,8 +376,7 @@ app.get('/api/series/:id', (req, res) => {
       }));
 
     const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
-    const superVipEnabled = Boolean(superVip.enabled);
-    const superVipReady = Boolean(superVip.enabled) && Boolean(superVip.groupId);
+    const superVipEnabled = Boolean(superVip.enabled) && Boolean(superVip.groupId);
 
     return res.json({
       success: true,
@@ -393,7 +392,6 @@ app.get('/api/series/:id', (req, res) => {
         superVip: superVipEnabled
           ? {
               enabled: true,
-              ready: superVipReady,
               title: String(superVip.title || ''),
               desc: String(superVip.desc || ''),
               buttonText: String(superVip.buttonText || ''),
