@@ -318,19 +318,21 @@ const App = () => {
 
 
 
-            <h4 className="text-[15px] font-bold mb-5 px-1">支付宝支付</h4>
-
+            <h4 className="text-[15px] font-bold mb-5 px-1">选择支付方式</h4>
             <div className="flex flex-col space-y-3.5 mb-24">
-              <button 
+              <button
                 onClick={() => startPayment('alipay')}
-                className="w-full p-5 bg-[#1A2333] hover:bg-[#252D3F] rounded-3xl border border-blue-500/60 ring-1 ring-blue-500/30 flex items-center group transition-all"
+                className="w-full p-5 rounded-3xl flex items-center border bg-[#1A2333] border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500 transition-all active:scale-[0.99]"
               >
+                <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 border-blue-500 bg-blue-500">
+                  <div className="w-2.5 h-2.5 bg-white rounded-full"></div>
+                </div>
                 <div className="w-12 h-12 bg-[#1677FF] rounded-2xl flex items-center justify-center mr-4 shadow-lg shadow-blue-500/20">
                   <img src="https://www.alipayobjects.com/static/images/common/logo.png" className="w-6 h-6" alt="支付宝" />
                 </div>
                 <div className="flex-1 text-left">
                   <div className="text-[15px] font-bold">支付宝（Alipay）</div>
-                  <div className="text-[11px] text-gray-500">Fast & Secure</div>
+                  <div className="text-[11px] text-gray-500">默认选中，不可取消</div>
                 </div>
               </button>
             </div>
