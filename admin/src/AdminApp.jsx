@@ -10,6 +10,7 @@ import AdminManagement from './pages/AdminManagement';
 import FinanceCenter from './pages/FinanceCenter';
 import SystemSettings from './pages/SystemSettings';
 import AlertBar from './components/AlertBar';
+import './index.css';
 // import AdminLogin from './pages/AdminLogin';
 // import { GoogleOAuthProvider } from '@react-oauth/google';
 
@@ -18,6 +19,9 @@ import AlertBar from './components/AlertBar';
 const AdminApp = () => {
   const [activeMenu, setActiveMenu] = useState('overview');
   const [appAlert, setAppAlert] = useState(null);
+  React.useEffect(() => {
+    document.documentElement.dataset.app = 'admin';
+  }, []);
   // 临时绕过登录，直接进入后台
   const [user, setUser] = useState({
     name: 'Admin',

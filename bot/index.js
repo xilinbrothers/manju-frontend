@@ -276,6 +276,43 @@ const isSubscriptionOk = (sub) => {
   return planDays === 0 || (expireAt && expireAt > Date.now());
 };
 
+const validateSeriesConfig = (body) => {
+  const seasons = Array.isArray(body?.seasons) ? body.seasons : [];
+  const superVip = body?.superVip && typeof body.superVip === 'object' ? body.superVip : {};
+
+  if (!Array.isArray(seasons) || seasons.length === 0) return { ok: false, message: '请至少配置 1 个分季' };
+  const seen = new Set();
+  for (const s of seasons) {
+    if (!s || typeof s !== 'object') return { ok: false, message: '分季配置不合法' };
+    const enabled = s.enabled !== false;
+    const seasonId = String(s.seasonId || '').trim();
+    if (!seasonId) return { ok: false, message: '分季 seasonId 不能为空' };
+    if (seen.has(seasonId)) return { ok: false, message: `分季 seasonId 重复：${seasonId}` };
+    seen.add(seasonId);
+
+    if (enabled) {
+      const vipGroupId = String(s.vipGroupId || '').trim();
+      if (!vipGroupId) return { ok: false, message: `分季 ${seasonId} 未配置 VIP 群 chat_id` };
+    }
+
+    const planOverride = Boolean(s.planOverride);
+    const plans = Array.isArray(s.plans) ? s.plans : [];
+    if (planOverride && plans.length === 0) return { ok: false, message: `分季 ${seasonId} 已开启套餐覆盖但未配置套餐` };
+  }
+
+  if (superVip?.enabled) {
+    const gid = String(superVip.groupId || '').trim();
+    if (!gid) return { ok: false, message: '已启用土豪专区但未配置土豪群 chat_id' };
+    const planOverride = Boolean(superVip.planOverride);
+    const plans = Array.isArray(superVip.plans) ? superVip.plans : [];
+    if (planOverride && plans.length === 0) return { ok: false, message: '土豪专区已开启套餐覆盖但未配置套餐' };
+    const minPayFen = Number(superVip?.pricing?.minPayFen ?? 100);
+    if (!Number.isFinite(minPayFen) || minPayFen < 0) return { ok: false, message: '土豪专区最低应付金额不合法' };
+  }
+
+  return { ok: true };
+};
+
 const generateAlipaySign = (params, merchantKey) => {
   const filtered = Object.entries(params)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -646,6 +683,8 @@ app.post('/api/admin/series', (req, res) => {
   (async () => {
     if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     const body = req.body || {};
+    const check = validateSeriesConfig(body);
+    if (!check.ok) return res.status(400).json({ success: false, message: check.message || '配置不合法' });
     const id = body.id || `series_${Date.now()}`;
     const item = {
       id,
@@ -683,6 +722,8 @@ app.put('/api/admin/series/:id', (req, res) => {
     if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     const id = req.params.id;
     const body = req.body || {};
+    const check = validateSeriesConfig(body);
+    if (!check.ok) return res.status(400).json({ success: false, message: check.message || '配置不合法' });
 
     if (mongoReady) {
       const prev = await Series.findOne({ id }).lean();

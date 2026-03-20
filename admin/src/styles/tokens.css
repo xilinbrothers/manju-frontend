@@ -1,0 +1,16 @@
+:root[data-app="admin"] {
+  --app-bg: #f1f5f9;
+  --app-fg: #0f172a;
+  --app-muted: rgba(71, 85, 105, 1);
+  --app-card: #ffffff;
+  --app-border: rgba(226, 232, 240, 1);
+
+  --app-primary: #4f46e5;
+  --app-primary-hover: #4338ca;
+
+  --app-radius-lg: 24px;
+  --app-radius-md: 16px;
+
+  --app-space: 16px;
+}
+

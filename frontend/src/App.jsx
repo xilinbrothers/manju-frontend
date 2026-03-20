@@ -154,6 +154,7 @@ const App = () => {
   }, [currentPage, selectedSeries?.id, selectedPlan?.id, selectedTargetType, selectedSeasonId]);
 
   useEffect(() => {
+    document.documentElement.dataset.app = 'frontend';
     // 1. 通知 Telegram SDK 已就绪
     if (window.Telegram?.WebApp) {
       const tg = window.Telegram.WebApp;
@@ -168,11 +169,6 @@ const App = () => {
         color: '#2563eb'
       });
     }
-
-    document.body.style.backgroundColor = '#0F172A';
-    document.body.style.color = '#FFFFFF';
-    document.body.style.margin = '0';
-    document.body.style.fontFamily = 'Inter, -apple-system, sans-serif';
   }, []);
 
   // 处理 Telegram SDK 交互按钮 (MainButton / BackButton)

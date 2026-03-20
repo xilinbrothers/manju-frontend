@@ -1,0 +1,16 @@
+:root[data-app="frontend"] {
+  --app-bg: #0f172a;
+  --app-fg: #ffffff;
+  --app-muted: rgba(148, 163, 184, 1);
+  --app-card: #1a2333;
+  --app-border: rgba(31, 41, 55, 0.5);
+
+  --app-primary: #3b82f6;
+  --app-primary-hover: #2563eb;
+
+  --app-radius-lg: 24px;
+  --app-radius-md: 16px;
+
+  --app-space: 16px;
+}
+

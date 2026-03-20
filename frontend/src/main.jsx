@@ -1,19 +1,33 @@
-import React from 'react'
+import React, { Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import App from './App.jsx'
-import AdminApp from '../../admin/src/AdminApp.jsx'
-import './index.css'
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <Routes>
-        {/* Bot TMA 前端主入口 */}
-        <Route path="/" element={<App />} />
-        {/* 管理后台前端主入口 */}
-        <Route path="/admin/*" element={<AdminApp />} />
-      </Routes>
-    </BrowserRouter>
-  </React.StrictMode>,
-)
+const AdminApp = React.lazy(() => import('../../admin/src/AdminApp.jsx'))
+
+const bootstrap = async () => {
+  const isAdmin = window.location.pathname.startsWith('/admin')
+  document.documentElement.dataset.app = isAdmin ? 'admin' : 'frontend'
+  if (isAdmin) await import('../../admin/src/index.css')
+  else await import('./index.css')
+
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<App />} />
+          <Route
+            path="/admin/*"
+            element={
+              <Suspense fallback={null}>
+                <AdminApp />
+              </Suspense>
+            }
+          />
+        </Routes>
+      </BrowserRouter>
+    </React.StrictMode>,
+  )
+}
+
+bootstrap()

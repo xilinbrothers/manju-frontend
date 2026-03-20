@@ -1042,6 +1042,42 @@ const SeriesManagement = ({ onAlert }) => {
                   onAlert?.('warning', '请填写剧名');
                   return;
                 }
+                const seasons = Array.isArray(draft?.seasons) ? draft.seasons : [];
+                if (seasons.length === 0) {
+                  onAlert?.('warning', '请至少配置 1 个分季');
+                  return;
+                }
+                const seen = new Set();
+                for (const s of seasons) {
+                  const seasonId = String(s?.seasonId || '').trim();
+                  if (!seasonId) {
+                    onAlert?.('warning', '分季 seasonId 不能为空');
+                    return;
+                  }
+                  if (seen.has(seasonId)) {
+                    onAlert?.('warning', `分季 seasonId 重复：${seasonId}`);
+                    return;
+                  }
+                  seen.add(seasonId);
+                  if (s?.enabled !== false && !String(s?.vipGroupId || '').trim()) {
+                    onAlert?.('warning', `分季 ${seasonId} 未配置 VIP 群 chat_id`);
+                    return;
+                  }
+                  if (Boolean(s?.planOverride) && (!Array.isArray(s?.plans) || s.plans.length === 0)) {
+                    onAlert?.('warning', `分季 ${seasonId} 已开启套餐覆盖但未配置套餐`);
+                    return;
+                  }
+                }
+                if (draft?.superVip?.enabled) {
+                  if (!String(draft?.superVip?.groupId || '').trim()) {
+                    onAlert?.('warning', '已启用土豪专区但未配置土豪群 chat_id');
+                    return;
+                  }
+                  if (Boolean(draft?.superVip?.planOverride) && (!Array.isArray(draft?.superVip?.plans) || draft.superVip.plans.length === 0)) {
+                    onAlert?.('warning', '土豪专区已开启套餐覆盖但未配置套餐');
+                    return;
+                  }
+                }
                 if (editingSeries?.id) {
                   await apiFetchJson(`/api/admin/series/${encodeURIComponent(editingSeries.id)}`, {
                     method: 'PUT',
