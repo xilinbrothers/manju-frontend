@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
+import AlertBar from '../components/AlertBar';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import SectionHeader from '../components/ui/SectionHeader';
 
 const PayRedirectPage = ({ orderId, onGoMySubs, onBackToPayment }) => {
   const [isLoading, setIsLoading] = useState(true);
@@ -99,68 +103,61 @@ const PayRedirectPage = ({ orderId, onGoMySubs, onBackToPayment }) => {
   }, [orderId, skipAutoOpen]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#0F172A] text-white p-6 pb-24">
+    <div className="flex flex-col min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)] p-6 pb-24">
       <header className="mb-8">
-        <h2 className="text-[28px] font-black tracking-tight">支付</h2>
-        <p className="text-gray-400 text-[14px] mt-1">将跳转到浏览器完成支付</p>
+        <SectionHeader title="支付" subtitle="将跳转到浏览器完成支付" />
       </header>
 
       {isLoading && (
-        <div className="text-[13px] text-gray-400 font-medium px-1">正在获取支付链接…</div>
+        <div className="text-[13px] text-[color:var(--app-muted)] font-medium px-1">正在获取支付链接…</div>
       )}
 
       {!isLoading && error && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-300 rounded-2xl p-4 text-[13px]">
-          {error}
-        </div>
+        <AlertBar type="error" message={error} />
       )}
 
       {!isLoading && !error && (
         <div className="space-y-4">
-          <div className="bg-[#1A2333] rounded-[2rem] p-5 border border-gray-800/50 shadow-xl space-y-3">
+          <Card className="p-5 space-y-3">
             <div className="text-[14px] font-bold">未自动跳转？</div>
-            <div className="text-[12px] text-gray-400 leading-relaxed">
+            <div className="text-[12px] text-[color:var(--app-muted)] leading-relaxed">
               请点击下方按钮继续。支付完成后可返回点击“我已支付”刷新状态，或进入“我的订阅”查看入群入口。
             </div>
-            <button
-              onClick={() => tryOpenPayUrl(payUrl)}
-              disabled={!payUrl}
-              className="w-full py-3 bg-[#3B82F6] hover:bg-blue-600 text-white text-[14px] font-bold rounded-2xl shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
-            >
+            <Button onClick={() => tryOpenPayUrl(payUrl)} disabled={!payUrl}>
               打开支付页面
-            </button>
+            </Button>
             <div className="flex gap-2">
-              <button
+              <Button
+                variant="ghost"
+                className="flex-1 py-3 text-[13px]"
                 onClick={refreshStatus}
-                className="flex-1 py-3 bg-[#252D3F] hover:bg-[#2D374D] text-gray-200 text-[13px] font-bold rounded-2xl border border-gray-700/50 transition-all active:scale-[0.98]"
               >
                 我已支付
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
+                className="flex-1 py-3 text-[13px]"
                 onClick={onGoMySubs}
-                className="flex-1 py-3 bg-transparent border border-gray-700 text-gray-300 text-[13px] font-bold rounded-2xl transition-all active:scale-[0.98]"
               >
                 去我的订阅
-              </button>
+              </Button>
             </div>
             {canCopy ? (
-              <button
+              <Button
+                variant="ghost"
+                className="py-3 text-[13px]"
                 onClick={copyPayUrl}
                 disabled={!payUrl}
-                className="w-full py-3 bg-transparent border border-gray-700 text-gray-300 text-[13px] font-bold rounded-2xl transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 复制支付链接
-              </button>
+              </Button>
             ) : null}
-            {statusText ? <div className="text-[12px] text-gray-400">{statusText}</div> : null}
-          </div>
+            {statusText ? <div className="text-[12px] text-[color:var(--app-muted)]">{statusText}</div> : null}
+          </Card>
 
-          <button
-            onClick={onBackToPayment}
-            className="w-full py-3 bg-transparent border border-gray-700 text-gray-300 text-[13px] font-bold rounded-2xl transition-all active:scale-[0.98]"
-          >
+          <Button variant="ghost" className="py-3 text-[13px]" onClick={onBackToPayment}>
             返回重新选择
-          </button>
+          </Button>
         </div>
       )}
     </div>

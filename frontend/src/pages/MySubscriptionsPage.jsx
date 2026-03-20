@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
+import AlertBar from '../components/AlertBar';
+import BottomNav from '../components/BottomNav';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import SectionHeader from '../components/ui/SectionHeader';
 
 const MySubscriptionsPage = ({ onNavigate, onRenew, onAlert }) => {
   const [activeSubs, setActiveSubs] = useState([]);
@@ -70,66 +75,63 @@ const MySubscriptionsPage = ({ onNavigate, onRenew, onAlert }) => {
 
   if (!hasSubscriptions) {
     return (
-      <div className="flex flex-col min-h-screen bg-[#0F172A] text-white p-6 items-center justify-center text-center">
+      <div className="flex flex-col min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)] p-6 items-center justify-center text-center pb-24">
         <div className="mb-2 w-full text-left self-start">
-          <h2 className="text-[28px] font-black tracking-tight">我的订阅</h2>
-          <p className="text-gray-400 text-[14px] mt-1">管理你的所有订阅内容</p>
+          <SectionHeader title="我的订阅" subtitle="管理你的所有订阅内容" />
         </div>
         
         <div className="flex-1 flex flex-col items-center justify-center -mt-20">
           {isLoading && (
-            <div className="text-[13px] text-gray-400 font-medium mb-6">正在加载订阅…</div>
+            <div className="text-[13px] text-[color:var(--app-muted)] font-medium mb-6">正在加载订阅…</div>
           )}
           {!isLoading && error && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-300 rounded-2xl p-4 text-[13px] mb-6 max-w-[320px]">
-              {error}
+            <div className="mb-6 w-full max-w-[360px]">
+              <AlertBar type="error" message={error} />
             </div>
           )}
-          <div className="w-32 h-32 bg-[#1A2333] rounded-full flex items-center justify-center mb-8 shadow-2xl border border-gray-800/50">
+          <div className="w-32 h-32 bg-[var(--app-card)] rounded-full flex items-center justify-center mb-8 shadow-2xl border border-[color:var(--app-border)]">
             <div className="text-5xl">📺</div>
           </div>
           <h3 className="text-[20px] font-bold mb-2">暂无订阅</h3>
-          <p className="text-gray-500 text-[14px] max-w-[200px] leading-relaxed mb-10">
+          <p className="text-[color:var(--app-muted)] text-[14px] max-w-[220px] leading-relaxed mb-10">
             你还没有订阅任何剧集 快去发现喜欢的内容吧
           </p>
-          <button 
+          <button
             onClick={() => onNavigate('series')}
-            className="px-10 py-4 bg-[#3B82F6] hover:bg-blue-600 text-white font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center space-x-2"
+            className="px-10 py-4 bg-[var(--app-primary)] hover:bg-[var(--app-primary-hover)] text-white font-bold rounded-full shadow-[0_18px_40px_rgba(59,130,246,0.18)] transition-all active:scale-[0.99] flex items-center space-x-2"
           >
             <span>🎬</span>
             <span>浏览剧集</span>
           </button>
         </div>
+        <BottomNav current="my-subs" onNavigate={onNavigate} />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#0F172A] text-white p-6 pb-24">
+    <div className="flex flex-col min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)] p-6 pb-24">
       <header className="mb-8">
-        <h2 className="text-[28px] font-black tracking-tight">我的订阅</h2>
-        <p className="text-gray-400 text-[14px] mt-1">管理你的所有订阅内容</p>
+        <SectionHeader title="我的订阅" subtitle="管理你的所有订阅内容" />
       </header>
 
       {isLoading && (
-        <div className="text-[13px] text-gray-400 font-medium px-1">正在加载订阅…</div>
+        <div className="text-[13px] text-[color:var(--app-muted)] font-medium px-1">正在加载订阅…</div>
       )}
 
       {!isLoading && error && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-300 rounded-2xl p-4 text-[13px]">
-          {error}
-        </div>
+        <AlertBar type="error" message={error} />
       )}
 
       {/* Active Subscriptions */}
       {!isLoading && !error && (
       <section className="space-y-5 mb-10">
-        <h4 className="text-[13px] font-bold text-gray-500 uppercase tracking-widest px-1">
+        <h4 className="text-[13px] font-bold text-[color:var(--app-muted)] uppercase tracking-widest px-1">
           活跃订阅 ({activeSubs.length})
         </h4>
         
         {activeSubs.map(sub => (
-          <div key={sub.id} className={`bg-[#1A2333] rounded-[2rem] p-5 border border-gray-800/50 shadow-xl relative overflow-hidden ${sub.status === 'expiring' ? 'ring-1 ring-orange-500/30' : ''}`}>
+          <Card key={sub.id} className={`p-5 relative overflow-hidden ${sub.status === 'expiring' ? 'ring-1 ring-orange-500/30' : ''}`}>
             {sub.status === 'expiring' && (
               <div className="flex items-center text-orange-500 text-[11px] font-bold mb-4">
                 <span className="mr-1.5">⚠️</span> 即将到期
@@ -137,7 +139,7 @@ const MySubscriptionsPage = ({ onNavigate, onRenew, onAlert }) => {
             )}
             
             <div className="flex space-x-4 mb-5">
-              <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 border border-white/5">
+              <div className="w-20 h-20 rounded-[var(--app-radius-md)] overflow-hidden flex-shrink-0 border border-white/5 bg-black/10">
                 <img src={sub.cover} className="w-full h-full object-cover" alt="" />
               </div>
               <div className="flex-1 flex flex-col justify-center">
@@ -153,13 +155,13 @@ const MySubscriptionsPage = ({ onNavigate, onRenew, onAlert }) => {
                      '已到期'}
                   </span>
                 </div>
-                <p className="text-[12px] text-gray-500 mt-1.5">{sub.plan}</p>
+                <p className="text-[12px] text-[color:var(--app-muted)] mt-1.5">{sub.plan}</p>
                 <div className="mt-3 flex items-center justify-between">
-                  <span className="text-[11px] text-gray-400 font-medium">剩余 {sub.remainingDays} 天</span>
-                  <span className="text-[11px] text-gray-600 font-bold">{sub.progress}%</span>
+                  <span className="text-[11px] text-[color:var(--app-muted)] font-medium">剩余 {sub.remainingDays} 天</span>
+                  <span className="text-[11px] text-white/40 font-bold">{sub.progress}%</span>
                 </div>
                 {/* Progress Bar */}
-                <div className="h-1.5 w-full bg-gray-800 rounded-full mt-1.5 overflow-hidden">
+                <div className="h-1.5 w-full bg-black/20 rounded-full mt-1.5 overflow-hidden border border-white/5">
                   <div 
                     className={`h-full rounded-full transition-all duration-1000 ${
                       sub.status === 'active' 
@@ -173,17 +175,18 @@ const MySubscriptionsPage = ({ onNavigate, onRenew, onAlert }) => {
             </div>
 
             <div className="flex space-x-3">
-              <button
+              <Button
+                variant="ghost"
+                className="flex-1 py-3 rounded-[var(--app-radius-md)] text-[13px] flex items-center justify-center space-x-2"
                 onClick={() => joinVipGroup(sub)}
                 disabled={!sub.hasVipGroup || joiningId === sub.id}
-                className="flex-1 py-3 bg-[#252D3F] hover:bg-[#2D374D] text-gray-200 text-[13px] font-bold rounded-2xl border border-gray-700/50 transition-all flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span>👥</span>
                 <span>{joiningId === sub.id ? '获取链接中…' : '进入群组'}</span>
-              </button>
+              </Button>
               <button className={`flex-1 py-3 text-white text-[13px] font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center ${
                 sub.status === 'active' 
-                  ? 'bg-transparent border border-gray-700 text-gray-400 hover:bg-white/5' 
+                  ? 'bg-transparent border border-[color:var(--app-border)] text-[color:var(--app-muted)] hover:bg-white/5' 
                   : 'bg-gradient-to-r from-orange-500 to-red-500 shadow-orange-900/20 active:scale-95'
               }`}
               onClick={() => onRenew?.(sub.seriesId)}
@@ -191,7 +194,7 @@ const MySubscriptionsPage = ({ onNavigate, onRenew, onAlert }) => {
                 {sub.status === 'active' ? '续费订阅' : '立即续费'}
               </button>
             </div>
-          </div>
+          </Card>
         ))}
       </section>
       )}
@@ -199,39 +202,30 @@ const MySubscriptionsPage = ({ onNavigate, onRenew, onAlert }) => {
       {/* Expired Subscriptions */}
       {!isLoading && !error && expiredSubs.length > 0 && (
         <section className="space-y-4">
-          <h4 className="text-[13px] font-bold text-gray-500 uppercase tracking-widest px-1">
+          <h4 className="text-[13px] font-bold text-[color:var(--app-muted)] uppercase tracking-widest px-1">
             已过期 ({expiredSubs.length})
           </h4>
           
           {expiredSubs.map(sub => (
             <div
               key={sub.id}
-              className="bg-[#1A2333]/40 rounded-3xl p-4 flex items-center space-x-4 border border-gray-800/30 opacity-60 group hover:opacity-100 transition-all cursor-pointer"
+              className="bg-[color:var(--app-card)]/40 rounded-[var(--app-radius-lg)] p-4 flex items-center space-x-4 border border-[color:var(--app-border)] opacity-60 group hover:opacity-100 transition-all cursor-pointer"
               onClick={() => onRenew?.(sub.seriesId)}
             >
               <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 grayscale">
                 <img src={sub.cover} className="w-full h-full object-cover" alt="" />
               </div>
               <div className="flex-1">
-                <h3 className="text-[14px] font-bold text-gray-300">{sub.title}</h3>
-                <p className="text-[11px] text-gray-500 mt-1">已于 {sub.expireDate} 过期</p>
+                <h3 className="text-[14px] font-bold text-white/85">{sub.title}</h3>
+                <p className="text-[11px] text-[color:var(--app-muted)] mt-1">已于 {sub.expireDate} 过期</p>
               </div>
-              <span className="text-gray-600 group-hover:text-gray-400 transition-colors">❯</span>
+              <span className="text-white/30 group-hover:text-white/55 transition-colors">❯</span>
             </div>
           ))}
         </section>
       )}
 
-      {/* Fixed Bottom Action */}
-      <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#0F172A]/80 backdrop-blur-xl border-t border-gray-800/30 z-50">
-        <button 
-          onClick={() => onNavigate('series')}
-          className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white text-[16px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2"
-        >
-          <span>🎬</span>
-          <span>浏览更多剧集</span>
-        </button>
-      </div>
+      <BottomNav current="my-subs" onNavigate={onNavigate} />
     </div>
   );
 };
