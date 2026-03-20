@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
+import AlertBar from '../components/AlertBar';
 
 const SystemSettings = ({ onAlert }) => {
   const [draft, setDraft] = useState({
@@ -237,6 +238,48 @@ const SystemSettings = ({ onAlert }) => {
     refreshWebhook();
     refreshOverrides();
   }, []);
+
+  const groupCheckSummary = useMemo(() => {
+    const errors = [];
+    const warnings = [];
+    const items = Array.isArray(groupCheck?.items) ? groupCheck.items : [];
+    for (const it of items) {
+      const name = String(it?.title || it?.id || '');
+      const addErr = (msg) => errors.push(`${name}：${msg}`);
+      const addWarn = (msg) => warnings.push(`${name}：${msg}`);
+
+      if (!String(it?.trialGroupId || '').trim()) addErr('试看群未配置');
+      else if (it?.trial?.ok === false) addErr(`试看群 error=${it?.trial?.error || 'unknown'}`);
+      else {
+        if (!it?.trial?.can_invite_users) addWarn('试看群 Bot 缺少邀请权限');
+        if (it?.trial?.chat?.username) addWarn('试看群为公开群');
+      }
+
+      const sv = it?.superVip || {};
+      if (sv?.configuredEnabled && !String(sv?.groupId || '').trim()) addErr('土豪专区已启用但未配置群ID');
+      else if (sv?.enabled) {
+        if (sv?.check?.ok === false) addErr(`土豪群 error=${sv?.check?.error || 'unknown'}`);
+        else {
+          if (!sv?.check?.can_manage_chat) addWarn('土豪群 Bot 缺少管理权限');
+          if (sv?.check?.chat?.username) addWarn('土豪群为公开群');
+        }
+      }
+
+      const seasons = Array.isArray(it?.seasons) ? it.seasons : [];
+      for (const ss of seasons) {
+        const sid = String(ss?.seasonId || '');
+        const vipGroupId = String(ss?.vipGroupId || '').trim();
+        const sname = sid ? `${sid}` : 'unknown';
+        if (!vipGroupId) errors.push(`${name} ${sname}：VIP群未配置`);
+        else if (ss?.check?.ok === false) errors.push(`${name} ${sname}：VIP群 error=${ss?.check?.error || 'unknown'}`);
+        else {
+          if (!ss?.check?.can_manage_chat) warnings.push(`${name} ${sname}：VIP群 Bot 缺少管理权限`);
+          if (ss?.check?.chat?.username) warnings.push(`${name} ${sname}：VIP群为公开群`);
+        }
+      }
+    }
+    return { errors, warnings };
+  }, [groupCheck]);
 
   return (
     <div className="space-y-6">
@@ -596,6 +639,18 @@ const SystemSettings = ({ onAlert }) => {
               ) : (
                 <div className="space-y-3 text-sm">
                   <div className="text-xs text-slate-500 font-medium">Bot：@{groupCheck?.bot?.username || '-'}（{groupCheck?.bot?.id || '-'}）</div>
+                  {groupCheckSummary.errors.length ? (
+                    <AlertBar
+                      type="error"
+                      message={`发现 ${groupCheckSummary.errors.length} 个致命问题：${groupCheckSummary.errors.slice(0, 3).join('；')}${groupCheckSummary.errors.length > 3 ? '…' : ''}`}
+                    />
+                  ) : null}
+                  {groupCheckSummary.warnings.length ? (
+                    <AlertBar
+                      type="warning"
+                      message={`发现 ${groupCheckSummary.warnings.length} 个风险项：${groupCheckSummary.warnings.slice(0, 3).join('；')}${groupCheckSummary.warnings.length > 3 ? '…' : ''}`}
+                    />
+                  ) : null}
                   <div className="space-y-2">
                     {(groupCheck?.items || []).map((it) => (
                       <div key={it.id} className="rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-2">

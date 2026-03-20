@@ -1067,9 +1067,17 @@ app.get('/api/admin/telegram/group-check', (req, res) => {
           check: await checkOne(String(ss.vipGroupId || '')),
         });
       }
-      const superVipCheck = superVip?.enabled && superVip?.groupId
-        ? { enabled: true, groupId: String(superVip.groupId || ''), title: String(superVip.title || ''), check: await checkOne(String(superVip.groupId || '')) }
-        : { enabled: false, groupId: '', title: '' };
+      const superVipConfiguredEnabled = Boolean(superVip?.enabled);
+      const superVipGroupId = String(superVip?.groupId || '');
+      const superVipCheck = superVipConfiguredEnabled && superVipGroupId
+        ? {
+            configuredEnabled: true,
+            enabled: true,
+            groupId: superVipGroupId,
+            title: String(superVip.title || ''),
+            check: await checkOne(superVipGroupId),
+          }
+        : { configuredEnabled: superVipConfiguredEnabled, enabled: false, groupId: superVipGroupId, title: String(superVip?.title || '') };
       items.push({ id: seriesId, title, trialGroupId, trial, legacyVipGroupId, legacyVip, seasons: seasonChecks, superVip: superVipCheck });
     }
 
