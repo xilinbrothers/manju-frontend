@@ -5,6 +5,8 @@ import PlansPage from './pages/PlansPage';
 import MySubscriptionsPage from './pages/MySubscriptionsPage';
 import PayRedirectPage from './pages/PayRedirectPage';
 import SeasonSelectPage from './pages/SeasonSelectPage';
+import ServicePage from './pages/ServicePage';
+import PaySuccessPage from './pages/PaySuccessPage';
 import AlertBar from './components/AlertBar';
 import Card from './components/ui/Card';
 import PaymentMethodSelector from './components/PaymentMethodSelector';
@@ -318,72 +320,7 @@ const App = () => {
           </div>
         );
       case 'success':
-        return (
-          <div className="flex flex-col min-h-screen bg-[#0F172A] p-5 text-center items-center">
-            <div className="mt-12 mb-10 relative">
-              <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(34,197,94,0.3)] animate-in zoom-in duration-500">
-                <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"></path>
-                </svg>
-              </div>
-            </div>
-
-            <h2 className="text-[24px] font-black text-white mb-2">{t.pay_success}</h2>
-            <p className="text-gray-400 text-[14px] mb-10">{t.sub_active}</p>
-
-            <div className="w-full bg-[#1A2333] rounded-3xl p-6 mb-8 border border-gray-800/50 text-left shadow-xl">
-              <div className="flex items-center space-x-2 mb-6">
-                <span className="text-orange-400">👑</span>
-                <span className="text-[15px] font-bold text-white">{t.benefits}</span>
-              </div>
-              
-              <div className="space-y-6">
-                <div className="flex items-start space-x-4">
-                  <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <span className="text-blue-500 text-lg">📅</span>
-                  </div>
-                  <div>
-                    <div className="text-[14px] font-bold text-white">{t.valid_until}</div>
-                    <div className="text-[12px] text-gray-400 mt-0.5">2026-06-14 23:59</div>
-                  </div>
-                </div>
-
-                <div className="flex items-start space-x-4">
-                  <div className="w-10 h-10 bg-purple-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <span className="text-purple-500 text-lg">👥</span>
-                  </div>
-                  <div>
-                    <div className="text-[14px] font-bold text-white">{t.vip_group}</div>
-                    <div className="text-[12px] text-gray-400 mt-0.5">请进入"我的订阅"查看并进入VIP群</div>
-                  </div>
-                </div>
-
-                <div className="flex items-start space-x-4">
-                  <div className="w-10 h-10 bg-green-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <span className="text-green-500 text-lg">✓</span>
-                  </div>
-                  <div>
-                    <div className="text-[14px] font-bold text-white">{t.full_unlock}</div>
-                    <div className="text-[12px] text-gray-400 mt-0.5">{t.hd_no_ads}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="w-full flex flex-col space-y-3.5 pb-10">
-              <button onClick={() => navigate('my-subs')} className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white text-[16px] font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2">
-                <span>📌</span>
-                <span>查看我的订阅</span>
-              </button>
-              <button 
-                onClick={() => navigate('welcome')}
-                className="w-full py-4.5 bg-transparent hover:bg-white/5 text-gray-300 text-[16px] font-bold rounded-full transition-all border border-gray-800/50"
-              >
-                {t.back_home}
-              </button>
-            </div>
-          </div>
-        );
+        return <PaySuccessPage t={t} onGoMySubs={() => navigate('my-subs')} onBackHome={() => navigate('welcome')} />;
       case 'my-subs':
         return (
           <MySubscriptionsPage
@@ -412,39 +349,14 @@ const App = () => {
           />
         );
       case 'service':
-        return (
-          <div className="flex flex-col min-h-screen bg-[#0F172A] text-white p-6 items-center justify-center text-center">
-            <div className="w-24 h-24 bg-[#1A2333] rounded-full flex items-center justify-center mb-8 shadow-2xl border border-gray-800/50">
-              <div className="text-4xl">💬</div>
-            </div>
-            <h3 className="text-[20px] font-bold mb-4">联系客服</h3>
-            <p className="text-gray-400 text-[14px] max-w-[240px] leading-relaxed mb-10">
-              遇到支付、进群或其他问题？<br/>
-              点击下方按钮联系我们的人工客服，我们将为您提供 1对1 服务。
-            </p>
-            <button 
-              className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white font-bold rounded-full shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center space-x-2"
-              onClick={() => window.open('https://t.me/manjudingyue', '_blank')}
-            >
-              <span>👤</span>
-              <span>联系人工客服</span>
-            </button>
-            
-            <button 
-              onClick={() => navigate('welcome')}
-              className="mt-6 text-gray-500 text-[14px] hover:text-white transition-colors"
-            >
-              返回首页
-            </button>
-          </div>
-        );
+        return <ServicePage onNavigate={navigate} />;
       default:
-        return <WelcomePage onNavigate={navigate} />;
+        return <WelcomePage onNavigate={navigate} t={t} />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-white">
+    <div className="min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)]">
       {/* 状态栏占位 */}
       <div className="h-6 w-full"></div>
       {appAlert?.message ? (

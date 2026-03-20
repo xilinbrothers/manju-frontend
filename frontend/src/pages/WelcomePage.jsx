@@ -1,63 +1,66 @@
 import React from 'react';
+import BottomNav from '../components/BottomNav';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import SectionHeader from '../components/ui/SectionHeader';
 
 const WelcomePage = ({ onNavigate, t }) => {
   return (
-    <div className="flex flex-col p-5 text-white min-h-screen">
-      {/* Bot Chat Bubbles */}
-      <div className="space-y-4 mb-8">
-        <div className="bg-[#1A2333] rounded-2xl rounded-bl-none p-4 max-w-[90%] self-start shadow-md border border-gray-700/50">
-          <p className="text-md font-medium leading-relaxed">
-            {t.welcome}
-          </p>
-        </div>
+    <div className="flex flex-col p-5 min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)] pb-24">
+      <div className="mb-6">
+        <SectionHeader title={t?.welcome || '欢迎'} subtitle={t?.welcome_desc || ''} />
+      </div>
 
-        <div className="bg-[#1A2333] rounded-2xl rounded-bl-none p-4 max-w-[90%] self-start shadow-md border border-gray-700/50">
-          <p className="text-sm leading-relaxed text-gray-200">
-            {t.welcome_desc}
-          </p>
-        </div>
+      <div className="space-y-4">
+        <Card className="p-4">
+          <div className="text-[13px] text-[color:var(--app-muted)] leading-relaxed">
+            {t?.welcome_desc || ''}
+          </div>
+        </Card>
 
-        {/* Feature List */}
-        <div className="space-y-3 py-2 px-1">
-          {t.features.map((feature, index) => (
-            <div key={index} className="flex items-center space-x-3 group">
-              <span className="text-xl">{['✨', '🎯', '🚀'][index]}</span>
-              <span className="text-sm font-medium text-gray-200">{feature}</span>
-            </div>
-          ))}
-        </div>
+        <Card className="p-4">
+          <div className="text-[14px] font-black mb-3">你可以在这里</div>
+          <div className="space-y-3">
+            {(t?.features || []).map((feature, index) => (
+              <div key={index} className="flex items-start gap-3">
+                <div className="w-7 h-7 rounded-xl bg-black/15 border border-white/10 flex items-center justify-center flex-shrink-0">
+                  <span className="text-[14px]">{['✨', '🎯', '🚀'][index] || '•'}</span>
+                </div>
+                <div className="text-[13px] text-[color:var(--app-muted)] leading-relaxed">{feature}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
 
-        <div className="pt-4">
-          <p className="text-sm font-medium text-gray-300">{t.explore}</p>
+        <div className="pt-2">
+          <div className="text-[12px] text-[color:var(--app-muted)]">{t?.explore || ''}</div>
         </div>
       </div>
 
-      {/* Buttons Container */}
-      <div className="flex flex-col space-y-3.5 mt-auto pb-6">
-        <button 
-          onClick={() => onNavigate('series')}
-          className="w-full py-4.5 bg-[#3B82F6] hover:bg-blue-600 text-white font-bold rounded-full transition-all shadow-lg shadow-blue-900/20 flex items-center justify-center space-x-2 active:scale-[0.98]"
+      <div className="mt-auto flex flex-col gap-3 pb-2">
+        <Button onClick={() => onNavigate?.('series')} className="py-4 rounded-full text-[15px] flex items-center justify-center gap-2">
+          <span>🎬</span>
+          <span>{t?.view_all || '查看所有剧集'}</span>
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => onNavigate?.('my-subs')}
+          className="py-4 rounded-full text-[15px] flex items-center justify-center gap-2"
         >
-          <span className="text-lg">🎬</span>
-          <span className="text-md">{t.view_all}</span>
-        </button>
-        
-        <button 
-          onClick={() => onNavigate('my-subs')}
-          className="w-full py-4.5 bg-transparent text-gray-200 font-bold rounded-full transition-all border border-gray-700/50 hover:bg-white/5 flex items-center justify-center space-x-2 active:scale-[0.98]"
+          <span>📌</span>
+          <span>{t?.my_subs || '我的订阅'}</span>
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => onNavigate?.('service')}
+          className="py-4 rounded-full text-[15px] flex items-center justify-center gap-2"
         >
-          <span className="text-lg">💳</span>
-          <span className="text-md">{t.my_subs}</span>
-        </button>
-        
-        <button 
-          onClick={() => onNavigate('service')}
-          className="w-full py-4.5 bg-transparent text-blue-500 font-bold rounded-full transition-all border border-gray-700/50 hover:bg-white/5 flex items-center justify-center space-x-2 active:scale-[0.98]"
-        >
-          <span className="text-lg">💬</span>
-          <span className="text-md">{t.contact_support}</span>
-        </button>
+          <span>💬</span>
+          <span>{t?.contact_support || '联系客服'}</span>
+        </Button>
       </div>
+
+      <BottomNav current="welcome" onNavigate={onNavigate} />
     </div>
   );
 };
