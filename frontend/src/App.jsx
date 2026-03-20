@@ -28,11 +28,7 @@ const App = () => {
     setAppAlert({ type, message: String(message || '') });
   };
 
-  // 多语言支持
-  const lang = useMemo(() => {
-    if (window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code === 'en') return 'en';
-    return 'zh';
-  }, []);
+  const lang = useMemo(() => 'zh', []);
   const t = getTranslation(lang);
 
   // 模拟 Telegram Web App 样式初始化
@@ -283,11 +279,11 @@ const App = () => {
             <Card className="p-6 mb-6 space-y-5">
               <div className="flex justify-between items-center text-[14px]">
                 <span className="text-[color:var(--app-muted)]">{t.sub_series}</span>
-                <span className="font-bold">{selectedDisplayTitle || selectedSeries?.title || 'Series Name'}</span>
+                <span className="font-bold">{selectedDisplayTitle || selectedSeries?.title || '剧集'}</span>
               </div>
               <div className="flex justify-between items-center text-[14px]">
                 <span className="text-[color:var(--app-muted)]">{t.sub_duration}</span>
-                <span className="font-bold">{selectedPlan?.label || '30 days'}</span>
+                <span className="font-bold">{selectedPlan?.label || '30天'}</span>
               </div>
               {quoteError ? (
                 <AlertBar type="error" message={quoteError} />
