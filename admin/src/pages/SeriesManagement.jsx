@@ -138,8 +138,8 @@ const SeriesManagement = ({ onAlert }) => {
     const srcH = img.naturalHeight || img.height;
     if (srcW < 640 || srcH < 360) throw new Error('图片分辨率过低，请至少 640×360');
 
-    const targetW = 960;
-    const targetH = 540;
+    const targetW = 640;
+    const targetH = 360;
     const targetRatio = targetW / targetH;
     const srcRatio = srcW / srcH;
 
@@ -161,14 +161,15 @@ const SeriesManagement = ({ onAlert }) => {
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
 
-    const maxBytes = 450 * 1024;
-    let q = 0.86;
+    const maxBytes = 220 * 1024;
+    let q = 0.84;
     let blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
-    while (blob && blob.size > maxBytes && q > 0.62) {
-      q = Math.max(0.62, q - 0.06);
+    while (blob && blob.size > maxBytes && q > 0.5) {
+      q = Math.max(0.5, q - 0.06);
       blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
     }
     if (!blob) throw new Error('图片处理失败');
+    if (blob.size > maxBytes) throw new Error('图片过大，请换更小的图片或减少分季数量后再保存');
     return blob;
   };
 
@@ -208,8 +209,8 @@ const SeriesManagement = ({ onAlert }) => {
     const srcH = img.naturalHeight || img.height;
     if (srcW < 480 || srcH < 640) throw new Error('图片分辨率过低，请至少 480×640');
 
-    const targetW = 600;
-    const targetH = 800;
+    const targetW = 480;
+    const targetH = 640;
     const targetRatio = targetW / targetH;
     const srcRatio = srcW / srcH;
 
@@ -231,14 +232,15 @@ const SeriesManagement = ({ onAlert }) => {
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
 
-    const maxBytes = 320 * 1024;
-    let q = 0.86;
+    const maxBytes = 220 * 1024;
+    let q = 0.84;
     let blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
-    while (blob && blob.size > maxBytes && q > 0.62) {
-      q = Math.max(0.62, q - 0.06);
+    while (blob && blob.size > maxBytes && q > 0.5) {
+      q = Math.max(0.5, q - 0.06);
       blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
     }
     if (!blob) throw new Error('图片处理失败');
+    if (blob.size > maxBytes) throw new Error('图片过大，请换更小的图片或减少分季数量后再保存');
     return blobToDataUrl(blob);
   };
 
