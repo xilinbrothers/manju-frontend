@@ -6,6 +6,8 @@ import MySubscriptionsPage from './pages/MySubscriptionsPage';
 import PayRedirectPage from './pages/PayRedirectPage';
 import SeasonSelectPage from './pages/SeasonSelectPage';
 import AlertBar from './components/AlertBar';
+import Card from './components/ui/Card';
+import PaymentMethodSelector from './components/PaymentMethodSelector';
 // AdminApp 不需要在 App.jsx 中导入，因为它在 main.jsx 中通过路由直接使用
 import { getTranslation } from './utils/i18n';
 import { apiFetchJson, getApiBaseUrl } from './utils/api';
@@ -275,67 +277,46 @@ const App = () => {
         );
       case 'payment':
         return (
-          <div className="flex flex-col min-h-screen bg-[#0F172A] text-white p-5">
+          <div className="flex flex-col min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)] p-5">
             <h2 className="text-[20px] font-black mb-8 px-1">{t.order_confirm}</h2>
             
-            <div className="bg-[#1A2333] rounded-3xl p-6 mb-6 border border-gray-800/50 space-y-5 shadow-xl">
+            <Card className="p-6 mb-6 space-y-5">
               <div className="flex justify-between items-center text-[14px]">
-                <span className="text-gray-400">{t.sub_series}</span>
+                <span className="text-[color:var(--app-muted)]">{t.sub_series}</span>
                 <span className="font-bold">{selectedDisplayTitle || selectedSeries?.title || 'Series Name'}</span>
               </div>
               <div className="flex justify-between items-center text-[14px]">
-                <span className="text-gray-400">{t.sub_duration}</span>
+                <span className="text-[color:var(--app-muted)]">{t.sub_duration}</span>
                 <span className="font-bold">{selectedPlan?.label || '30 days'}</span>
               </div>
               {quoteError ? (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-300 rounded-2xl p-3 text-[12px]">
-                  {quoteError}
-                </div>
+                <AlertBar type="error" message={quoteError} />
               ) : quote?.targetType === 'super' ? (
-                <div className="rounded-2xl border border-gray-800/50 bg-[#0F172A]/40 p-4 space-y-2">
+                <div className="rounded-[var(--app-radius-md)] border border-[color:var(--app-border)] bg-black/10 p-4 space-y-2">
                   <div className="flex justify-between items-center text-[13px]">
-                    <span className="text-gray-400">全季原价</span>
+                    <span className="text-[color:var(--app-muted)]">全季原价</span>
                     <span className="font-mono font-bold">￥{(Number(quote.baseAmountFen || 0) / 100).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center text-[13px]">
-                    <span className="text-gray-400">已购季抵扣</span>
+                    <span className="text-[color:var(--app-muted)]">已购季抵扣</span>
                     <span className="font-mono font-bold text-green-400">-￥{(Number(quote.discountFen || 0) / 100).toFixed(2)}</span>
                   </div>
                   {Number(quote.minPayFen || 0) > 0 ? (
-                    <div className="text-[11px] text-gray-500">
+                    <div className="text-[11px] text-[color:var(--app-muted)]">
                       最低应付 ￥{(Number(quote.minPayFen || 0) / 100).toFixed(2)}
                     </div>
                   ) : null}
                 </div>
               ) : null}
-              <div className="border-t border-gray-800/50 pt-4 flex justify-between items-center">
-                <span className="text-gray-400 text-[14px]">{t.order_amount}</span>
-                <span className="text-[22px] font-black font-mono text-white">
+              <div className="border-t border-[color:var(--app-border)] pt-4 flex justify-between items-center">
+                <span className="text-[color:var(--app-muted)] text-[14px]">{t.order_amount}</span>
+                <span className="text-[22px] font-black font-mono">
                   ￥{quote?.payAmountFen ? (Number(quote.payAmountFen) / 100).toFixed(2) : (selectedPlan?.price || '69.9')}
                 </span>
               </div>
-            </div>
+            </Card>
 
-
-
-            <h4 className="text-[15px] font-bold mb-5 px-1">选择支付方式</h4>
-            <div className="flex flex-col space-y-3.5 mb-24">
-              <button
-                onClick={() => startPayment('alipay')}
-                className="w-full p-5 rounded-3xl flex items-center border bg-[#1A2333] border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500 transition-all active:scale-[0.99]"
-              >
-                <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 border-blue-500 bg-blue-500">
-                  <div className="w-2.5 h-2.5 bg-white rounded-full"></div>
-                </div>
-                <div className="w-12 h-12 bg-[#1677FF] rounded-2xl flex items-center justify-center mr-4 shadow-lg shadow-blue-500/20">
-                  <img src="https://www.alipayobjects.com/static/images/common/logo.png" className="w-6 h-6" alt="支付宝" />
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="text-[15px] font-bold">支付宝（Alipay）</div>
-                  <div className="text-[11px] text-gray-500">默认选中，不可取消</div>
-                </div>
-              </button>
-            </div>
+            <PaymentMethodSelector className="mb-24" onSelectAlipay={() => startPayment('alipay')} />
             
             {/* 已移除页面底部的固定确认按钮，改用 Telegram 原生 MainButton */}
           </div>
