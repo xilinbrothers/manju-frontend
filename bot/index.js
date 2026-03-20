@@ -320,6 +320,21 @@ const validateSeriesConfig = (body) => {
   return { ok: true };
 };
 
+const mergeSeasonsPreserveCover = (prevSeasons, nextSeasons) => {
+  const prev = Array.isArray(prevSeasons) ? prevSeasons : [];
+  const incoming = Array.isArray(nextSeasons) ? nextSeasons : [];
+  const prevMap = new Map(prev.map((s) => [String(s?.seasonId || ''), s]));
+  const merged = [];
+  for (const s of incoming) {
+    if (!s || typeof s !== 'object') continue;
+    const sid = String(s.seasonId || '');
+    const ps = prevMap.get(sid) || {};
+    const cover = s.cover !== undefined ? s.cover : ps.cover;
+    merged.push({ ...ps, ...s, ...(cover !== undefined ? { cover } : {}) });
+  }
+  return merged;
+};
+
 const generateAlipaySign = (params, merchantKey) => {
   const filtered = Object.entries(params)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -449,6 +464,69 @@ app.get('/api/series/:id', (req, res) => {
       updatedAt: dateNowIso(),
     });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
+});
+
+app.post('/api/admin/series/:id/cover', upload.single('file'), (req, res) => {
+  (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ success: false, message: '参数缺失' });
+    const file = req.file;
+    if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
+    if (file.mimetype !== 'image/webp') return res.status(400).json({ success: false, message: '仅支持 WEBP（请重新上传）' });
+    const cover = `data:image/webp;base64,${file.buffer.toString('base64')}`;
+
+    if (mongoReady) {
+      const prev = await Series.findOne({ id }).lean();
+      if (!prev) return res.status(404).json({ success: false, message: '剧集不存在' });
+      await Series.updateOne({ id }, { $set: { cover } });
+      return res.json({ success: true, updatedAt: dateNowIso() });
+    }
+
+    const store = loadStore();
+    const idx = (store.series || []).findIndex((s) => String(s?.id || '') === id);
+    if (idx < 0) return res.status(404).json({ success: false, message: '剧集不存在' });
+    const nextSeries = [...(store.series || [])];
+    nextSeries[idx] = { ...(nextSeries[idx] || {}), cover };
+    const next = saveStore({ ...store, series: nextSeries });
+    return res.json({ success: true, updatedAt: next.updatedAt });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.post('/api/admin/series/:id/seasons/:seasonId/cover', upload.single('file'), (req, res) => {
+  (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
+    const id = String(req.params.id || '').trim();
+    const seasonId = String(req.params.seasonId || '').trim();
+    if (!id || !seasonId) return res.status(400).json({ success: false, message: '参数缺失' });
+    const file = req.file;
+    if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
+    if (file.mimetype !== 'image/webp') return res.status(400).json({ success: false, message: '仅支持 WEBP（请重新上传）' });
+    const cover = `data:image/webp;base64,${file.buffer.toString('base64')}`;
+
+    if (mongoReady) {
+      const prev = await Series.findOne({ id }).lean();
+      if (!prev) return res.status(404).json({ success: false, message: '剧集不存在' });
+      const exists = Array.isArray(prev.seasons) && prev.seasons.some((s) => String(s?.seasonId || '') === seasonId);
+      if (!exists) return res.status(404).json({ success: false, message: '分季不存在' });
+      await Series.updateOne({ id, 'seasons.seasonId': seasonId }, { $set: { 'seasons.$.cover': cover } });
+      return res.json({ success: true, updatedAt: dateNowIso() });
+    }
+
+    const store = loadStore();
+    const idx = (store.series || []).findIndex((s) => String(s?.id || '') === id);
+    if (idx < 0) return res.status(404).json({ success: false, message: '剧集不存在' });
+    const prev = store.series[idx] || {};
+    const seasons = Array.isArray(prev.seasons) ? prev.seasons : [];
+    const sidx = seasons.findIndex((s) => String(s?.seasonId || '') === seasonId);
+    if (sidx < 0) return res.status(404).json({ success: false, message: '分季不存在' });
+    const nextSeasons = [...seasons];
+    nextSeasons[sidx] = { ...(nextSeasons[sidx] || {}), cover };
+    const nextSeries = [...(store.series || [])];
+    nextSeries[idx] = { ...prev, seasons: nextSeasons };
+    const next = saveStore({ ...store, series: nextSeries });
+    return res.json({ success: true, updatedAt: next.updatedAt });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
 
 app.get('/api/plans', (req, res) => {
@@ -706,7 +784,7 @@ app.post('/api/admin/series', (req, res) => {
       vipGroupId: body.vipGroupId || '',
       planOverride: Boolean(body.planOverride),
       plans: Array.isArray(body.plans) ? body.plans : [],
-      seasons: Array.isArray(body.seasons) ? body.seasons : [],
+      seasons: mergeSeasonsPreserveCover([], Array.isArray(body.seasons) ? body.seasons : []),
       superVip: body.superVip && typeof body.superVip === 'object' ? body.superVip : {},
     };
 
@@ -748,7 +826,7 @@ app.put('/api/admin/series/:id', (req, res) => {
         vipGroupId: body.vipGroupId !== undefined ? body.vipGroupId : prev.vipGroupId,
         planOverride: body.planOverride !== undefined ? Boolean(body.planOverride) : prev.planOverride,
         plans: Array.isArray(body.plans) ? body.plans : prev.plans,
-        seasons: Array.isArray(body.seasons) ? body.seasons : prev.seasons,
+        seasons: mergeSeasonsPreserveCover(prev.seasons, Array.isArray(body.seasons) ? body.seasons : prev.seasons),
         superVip: body.superVip && typeof body.superVip === 'object' ? body.superVip : prev.superVip,
       };
       await Series.updateOne({ id }, { $set: nextItem });
@@ -773,7 +851,7 @@ app.put('/api/admin/series/:id', (req, res) => {
       vipGroupId: body.vipGroupId !== undefined ? body.vipGroupId : prev.vipGroupId,
       planOverride: body.planOverride !== undefined ? Boolean(body.planOverride) : prev.planOverride,
       plans: Array.isArray(body.plans) ? body.plans : prev.plans,
-      seasons: Array.isArray(body.seasons) ? body.seasons : prev.seasons,
+      seasons: mergeSeasonsPreserveCover(prev.seasons, Array.isArray(body.seasons) ? body.seasons : prev.seasons),
       superVip: body.superVip && typeof body.superVip === 'object' ? body.superVip : prev.superVip,
     };
     const nextSeries = [...store.series];

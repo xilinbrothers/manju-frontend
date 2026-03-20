@@ -188,6 +188,62 @@ const SeriesManagement = ({ onAlert }) => {
     return blobToDataUrl(blob);
   };
 
+  const imageFileToSeasonCoverBlob = async (file) => {
+    const ok = /image\/(png|jpeg|webp)/.test(file.type || '');
+    if (!ok) throw new Error('仅支持 JPG/PNG/WEBP 图片');
+    const img = await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const i = new Image();
+      i.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(i);
+      };
+      i.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('图片加载失败'));
+      };
+      i.src = url;
+    });
+
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
+    if (srcW < 480 || srcH < 640) throw new Error('图片分辨率过低，请至少 480×640');
+
+    const targetW = 480;
+    const targetH = 640;
+    const targetRatio = targetW / targetH;
+    const srcRatio = srcW / srcH;
+
+    let cropW = srcW;
+    let cropH = srcH;
+    if (srcRatio > targetRatio) {
+      cropW = Math.round(srcH * targetRatio);
+    } else {
+      cropH = Math.round(srcW / targetRatio);
+    }
+    const cropX = Math.round((srcW - cropW) / 2);
+    const cropY = Math.round((srcH - cropH) / 2);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
+
+    const maxBytes = 220 * 1024;
+    let q = 0.84;
+    let blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
+    while (blob && blob.size > maxBytes && q > 0.5) {
+      q = Math.max(0.5, q - 0.06);
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
+    }
+    if (!blob) throw new Error('图片处理失败');
+    if (blob.size > maxBytes) throw new Error('图片过大，请换更小的图片或减少分季数量后再保存');
+    return blob;
+  };
+
   const imageFileToSeasonCoverDataUrl = async (file) => {
     const ok = /image\/(png|jpeg|webp)/.test(file.type || '');
     if (!ok) throw new Error('仅支持 JPG/PNG/WEBP 图片');
@@ -244,11 +300,25 @@ const SeriesManagement = ({ onAlert }) => {
     return blobToDataUrl(blob);
   };
 
+  const uploadWebpToApi = async (path, blob) => {
+    const fd = new FormData();
+    fd.append('file', blob, 'cover.webp');
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}${path}`, { method: 'POST', body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) throw new Error(data?.message || `上传失败: ${res.status}`);
+    return true;
+  };
+
   const onPickCover = async (file) => {
     if (!file) return;
     try {
       setIsUploadingCover(true);
-      const url = await imageFileToCoverDataUrl(file);
+      const blob = await imageFileToCoverBlob(file);
+      const url = await blobToDataUrl(blob);
+      if (editingSeries?.id) {
+        await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(editingSeries.id)}/cover`, blob);
+      }
       setDraft((d) => ({ ...(d || {}), cover: url }));
     } catch (e) {
       onAlert?.('error', e?.message || '封面上传失败');
@@ -263,7 +333,12 @@ const SeriesManagement = ({ onAlert }) => {
     if (seasonCoverPickIndex < 0) return;
     try {
       setIsUploadingSeasonCover(true);
-      const url = await imageFileToSeasonCoverDataUrl(file);
+      const blob = await imageFileToSeasonCoverBlob(file);
+      const url = await blobToDataUrl(blob);
+      const sid = String(draft?.seasons?.[seasonCoverPickIndex]?.seasonId || '').trim();
+      if (editingSeries?.id && sid) {
+        await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(editingSeries.id)}/seasons/${encodeURIComponent(sid)}/cover`, blob);
+      }
       setDraft((d) => {
         const seasons = [...((d?.seasons || []))];
         if (!seasons[seasonCoverPickIndex]) return d;
@@ -1081,9 +1156,18 @@ const SeriesManagement = ({ onAlert }) => {
                   }
                 }
                 if (editingSeries?.id) {
+                  const payload = { ...draft };
+                  delete payload.cover;
+                  if (Array.isArray(payload.seasons)) {
+                    payload.seasons = payload.seasons.map((s) => {
+                      if (!s || typeof s !== 'object') return s;
+                      const { cover, ...rest } = s;
+                      return rest;
+                    });
+                  }
                   await apiFetchJson(`/api/admin/series/${encodeURIComponent(editingSeries.id)}`, {
                     method: 'PUT',
-                    body: JSON.stringify(draft),
+                    body: JSON.stringify(payload),
                   });
                 } else {
                   await apiFetchJson('/api/admin/series', {
