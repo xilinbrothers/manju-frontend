@@ -10,7 +10,10 @@ const SeriesManagement = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [globalPlans, setGlobalPlans] = useState([]);
   const coverInputRef = useRef(null);
+  const seasonCoverInputRef = useRef(null);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [isUploadingSeasonCover, setIsUploadingSeasonCover] = useState(false);
+  const [seasonCoverPickIndex, setSeasonCoverPickIndex] = useState(-1);
 
   const refresh = async () => {
     try {
@@ -72,6 +75,8 @@ const SeriesManagement = () => {
         vipGroupId: s?.vipGroupId || '',
         enabled: s?.enabled !== false,
         sort: Number(s?.sort || 0) || 0,
+        planOverride: Boolean(s?.planOverride),
+        plans: Array.isArray(s?.plans) && s.plans.length > 0 ? [...s.plans] : JSON.parse(JSON.stringify(globalPlans)),
       })) : [],
       superVip: raw.superVip && typeof raw.superVip === 'object' ? {
         enabled: Boolean(raw.superVip.enabled),
@@ -178,6 +183,71 @@ const SeriesManagement = () => {
     return `${baseUrl}${data.url}`;
   };
 
+  const blobToDataUrl = async (blob) => {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ''));
+      r.onerror = () => reject(new Error('读取失败'));
+      r.readAsDataURL(blob);
+    });
+    return dataUrl;
+  };
+
+  const imageFileToSeasonCoverDataUrl = async (file) => {
+    const ok = /image\/(png|jpeg|webp)/.test(file.type || '');
+    if (!ok) throw new Error('仅支持 JPG/PNG/WEBP 图片');
+    const img = await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const i = new Image();
+      i.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(i);
+      };
+      i.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('图片加载失败'));
+      };
+      i.src = url;
+    });
+
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
+    if (srcW < 480 || srcH < 640) throw new Error('图片分辨率过低，请至少 480×640');
+
+    const targetW = 600;
+    const targetH = 800;
+    const targetRatio = targetW / targetH;
+    const srcRatio = srcW / srcH;
+
+    let cropW = srcW;
+    let cropH = srcH;
+    if (srcRatio > targetRatio) {
+      cropW = Math.round(srcH * targetRatio);
+    } else {
+      cropH = Math.round(srcW / targetRatio);
+    }
+    const cropX = Math.round((srcW - cropW) / 2);
+    const cropY = Math.round((srcH - cropH) / 2);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
+
+    const maxBytes = 320 * 1024;
+    let q = 0.86;
+    let blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
+    while (blob && blob.size > maxBytes && q > 0.62) {
+      q = Math.max(0.62, q - 0.06);
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
+    }
+    if (!blob) throw new Error('图片处理失败');
+    return blobToDataUrl(blob);
+  };
+
   const onPickCover = async (file) => {
     if (!file) return;
     try {
@@ -189,6 +259,27 @@ const SeriesManagement = () => {
     } finally {
       setIsUploadingCover(false);
       if (coverInputRef.current) coverInputRef.current.value = '';
+    }
+  };
+
+  const onPickSeasonCover = async (file) => {
+    if (!file) return;
+    if (seasonCoverPickIndex < 0) return;
+    try {
+      setIsUploadingSeasonCover(true);
+      const url = await imageFileToSeasonCoverDataUrl(file);
+      setDraft((d) => {
+        const seasons = [...((d?.seasons || []))];
+        if (!seasons[seasonCoverPickIndex]) return d;
+        seasons[seasonCoverPickIndex] = { ...seasons[seasonCoverPickIndex], cover: url };
+        return { ...(d || {}), seasons };
+      });
+    } catch (e) {
+      alert(e?.message || '剧照上传失败');
+    } finally {
+      setIsUploadingSeasonCover(false);
+      setSeasonCoverPickIndex(-1);
+      if (seasonCoverInputRef.current) seasonCoverInputRef.current.value = '';
     }
   };
 
@@ -333,7 +424,16 @@ const SeriesManagement = () => {
   );
 
   const renderEdit = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <>
+      <input
+        ref={seasonCoverInputRef}
+        id="seasonCoverFileInput"
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => onPickSeasonCover(e.target.files?.[0] || null)}
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className="lg:col-span-2 space-y-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
           <div className="flex items-center justify-between">
@@ -468,6 +568,8 @@ const SeriesManagement = () => {
                 vipGroupId: '',
                 enabled: true,
                 sort: next.length + 1,
+                planOverride: false,
+                plans: JSON.parse(JSON.stringify(globalPlans)),
               });
               setDraft((d) => ({ ...(d || {}), seasons: next }));
             }}
@@ -544,18 +646,31 @@ const SeriesManagement = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">季剧照（URL）</label>
-                    <input
-                      type="text"
-                      value={s.cover || ''}
-                      onChange={(e) => {
-                        const next = [...(draft?.seasons || [])];
-                        next[idx] = { ...next[idx], cover: e.target.value };
-                        setDraft((d) => ({ ...(d || {}), seasons: next }));
-                      }}
-                      className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      placeholder="https://..."
-                    />
+                    <label className="text-sm font-bold text-slate-700">季剧照</label>
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 flex-shrink-0">
+                          {s.cover ? <img src={s.cover} alt="season-cover" className="h-full w-full object-cover" /> : null}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs text-slate-500 font-semibold truncate">{s.cover ? '已上传' : '未上传'}</div>
+                          <div className="text-[11px] text-slate-400 font-medium truncate">{s.cover ? String(s.cover).slice(0, 42) : ''}</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSeasonCoverPickIndex(idx);
+                          seasonCoverInputRef.current?.click();
+                        }}
+                        className="h-9 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors"
+                      >
+                        {isUploadingSeasonCover && seasonCoverPickIndex === idx ? '上传中…' : '上传'}
+                      </button>
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                      建议竖图 3:4，将自动居中裁剪并压缩为 WEBP，保存到数据库字段。
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">VIP群 chat_id *</label>
@@ -598,6 +713,113 @@ const SeriesManagement = () => {
                     }}
                     className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   ></textarea>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <div className="text-sm font-black text-slate-900">本季套餐覆盖</div>
+                      <div className="text-xs text-slate-500 font-medium">开启后将覆盖全局/整剧默认价格</div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={Boolean(s.planOverride)}
+                        onChange={(e) => {
+                          const next = [...(draft?.seasons || [])];
+                          const prev = next[idx] || {};
+                          const enabled = e.target.checked;
+                          next[idx] = {
+                            ...prev,
+                            planOverride: enabled,
+                            plans: enabled && Array.isArray(prev.plans) && prev.plans.length > 0 ? prev.plans : JSON.parse(JSON.stringify(globalPlans)),
+                          };
+                          setDraft((d) => ({ ...(d || {}), seasons: next }));
+                        }}
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                  </div>
+
+                  <div className={`space-y-4 ${!s.planOverride ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {(s.plans || []).map((p, pidx) => (
+                      <div key={pidx} className="flex items-center justify-between text-sm gap-2">
+                        <input
+                          type="text"
+                          value={p.label}
+                          onChange={(e) => {
+                            const next = [...(draft?.seasons || [])];
+                            const nextPlans = [...(next[idx].plans || [])];
+                            nextPlans[pidx] = { ...nextPlans[pidx], label: e.target.value };
+                            next[idx] = { ...next[idx], plans: nextPlans };
+                            setDraft((d) => ({ ...(d || {}), seasons: next }));
+                          }}
+                          className="w-24 h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-slate-700 font-semibold outline-none"
+                          placeholder="套餐名"
+                        />
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            value={p.days}
+                            onChange={(e) => {
+                              const next = [...(draft?.seasons || [])];
+                              const nextPlans = [...(next[idx].plans || [])];
+                              nextPlans[pidx] = { ...nextPlans[pidx], days: Number(e.target.value) || 0 };
+                              next[idx] = { ...next[idx], plans: nextPlans };
+                              setDraft((d) => ({ ...(d || {}), seasons: next }));
+                            }}
+                            className="w-20 h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-right font-mono text-sm outline-none"
+                            placeholder="天数"
+                          />
+                          <span className="text-slate-500 text-xs">天</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-500 text-xs">￥</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={p.priceCny}
+                            onChange={(e) => {
+                              const next = [...(draft?.seasons || [])];
+                              const nextPlans = [...(next[idx].plans || [])];
+                              nextPlans[pidx] = { ...nextPlans[pidx], priceCny: Number(e.target.value) || 0 };
+                              next[idx] = { ...next[idx], plans: nextPlans };
+                              setDraft((d) => ({ ...(d || {}), seasons: next }));
+                            }}
+                            className="w-24 h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-right font-mono text-sm outline-none"
+                            placeholder="价格"
+                          />
+                        </div>
+                        <button
+                          onClick={() => {
+                            const next = [...(draft?.seasons || [])];
+                            const nextPlans = [...(next[idx].plans || [])];
+                            nextPlans.splice(pidx, 1);
+                            next[idx] = { ...next[idx], plans: nextPlans };
+                            setDraft((d) => ({ ...(d || {}), seasons: next }));
+                          }}
+                          className="text-rose-500 hover:text-rose-600 text-xs font-bold px-2"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    ))}
+                    {s.planOverride ? (
+                      <button
+                        onClick={() => {
+                          const next = [...(draft?.seasons || [])];
+                          const nextPlans = [...(next[idx].plans || [])];
+                          nextPlans.push({ id: `plan_${Date.now()}`, label: '新套餐', days: 30, priceCny: 9.9, enabled: true });
+                          next[idx] = { ...next[idx], plans: nextPlans };
+                          setDraft((d) => ({ ...(d || {}), seasons: next }));
+                        }}
+                        className="text-indigo-600 hover:text-indigo-700 text-sm font-bold mt-2"
+                      >
+                        + 添加本季套餐
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ))}
@@ -939,6 +1161,7 @@ const SeriesManagement = () => {
         </div>
       </div>
     </div>
+    </>
   );
 
   return (

@@ -108,10 +108,14 @@ const SeasonSelectPage = ({ seriesId, onSelectTarget, onNavigate }) => {
                     onSelectTarget({ targetType: 'super', seasonId: 'all', displayTitle: superVip?.title || `${series?.title || ''} 全季`.trim() });
                     onNavigate('plans');
                   }}
+                  disabled={superVip?.ready === false}
                   className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-[#0F172A] text-[14px] font-black rounded-2xl shadow-lg shadow-yellow-900/30 transition-all active:scale-[0.98]"
                 >
-                  {superVip?.buttonText || '全季订阅（尊享）'}
+                  {superVip?.ready === false ? '土豪群未配置' : (superVip?.buttonText || '全季订阅（尊享）')}
                 </button>
+                {superVip?.ready === false ? (
+                  <div className="text-[11px] text-amber-200/80 mt-2">后台开启土豪专区后需填写土豪群 chat_id 才可使用。</div>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -122,4 +126,3 @@ const SeasonSelectPage = ({ seriesId, onSelectTarget, onNavigate }) => {
 };
 
 export default SeasonSelectPage;
-
