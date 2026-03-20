@@ -63,6 +63,38 @@ const SeriesManagement = () => {
       vipGroupId: raw.vipGroupId || '',
       planOverride: Boolean(raw.planOverride),
       plans: Array.isArray(raw.plans) && raw.plans.length > 0 ? [...raw.plans] : JSON.parse(JSON.stringify(globalPlans)),
+      seasons: Array.isArray(raw.seasons) ? raw.seasons.map((s) => ({
+        seasonId: s?.seasonId || '',
+        title: s?.title || '',
+        cover: s?.cover || '',
+        introTitle: s?.introTitle || '',
+        introText: s?.introText || '',
+        vipGroupId: s?.vipGroupId || '',
+        enabled: s?.enabled !== false,
+        sort: Number(s?.sort || 0) || 0,
+      })) : [],
+      superVip: raw.superVip && typeof raw.superVip === 'object' ? {
+        enabled: Boolean(raw.superVip.enabled),
+        groupId: raw.superVip.groupId || '',
+        title: raw.superVip.title || '',
+        desc: raw.superVip.desc || '',
+        buttonText: raw.superVip.buttonText || '',
+        planOverride: Boolean(raw.superVip.planOverride),
+        plans: Array.isArray(raw.superVip.plans) && raw.superVip.plans.length > 0 ? [...raw.superVip.plans] : JSON.parse(JSON.stringify(globalPlans)),
+        pricing: {
+          minPayFen: Number(raw.superVip?.pricing?.minPayFen || 100) || 100,
+          upgradeEnabled: raw.superVip?.pricing?.upgradeEnabled !== false,
+        },
+      } : {
+        enabled: false,
+        groupId: '',
+        title: '',
+        desc: '',
+        buttonText: '',
+        planOverride: false,
+        plans: JSON.parse(JSON.stringify(globalPlans)),
+        pricing: { minPayFen: 100, upgradeEnabled: true },
+      },
     });
     setView('edit');
   };
@@ -189,6 +221,17 @@ const SeriesManagement = () => {
               vipGroupId: '',
               planOverride: false,
               plans: JSON.parse(JSON.stringify(globalPlans)),
+              seasons: [],
+              superVip: {
+                enabled: false,
+                groupId: '',
+                title: '',
+                desc: '',
+                buttonText: '',
+                planOverride: false,
+                plans: JSON.parse(JSON.stringify(globalPlans)),
+                pricing: { minPayFen: 100, upgradeEnabled: true },
+              },
             });
             setView('edit');
           }}
@@ -389,7 +432,7 @@ const SeriesManagement = () => {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">VIP群 ID / 邀请链接</label>
+              <label className="text-sm font-bold text-slate-700">旧版VIP群 ID / 邀请链接（兼容）</label>
               <input 
                 type="text" 
                 value={draft?.vipGroupId || ''}
@@ -403,6 +446,338 @@ const SeriesManagement = () => {
                 💡 提示：需在 Telegram 群设置中手动开启“对新成员隐藏历史记录”，Bot 无法为单个用户单独解锁历史内容。
               </p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="text-base font-black text-slate-900">分季配置</div>
+            <div className="text-xs text-slate-500 font-medium">为该剧集配置各季信息与对应 VIP 群</div>
+          </div>
+          <button
+            onClick={() => {
+              const next = [...(draft?.seasons || [])];
+              next.push({
+                seasonId: `s${next.length + 1}`,
+                title: `第${next.length + 1}季`,
+                cover: draft?.cover || '',
+                introTitle: `第${next.length + 1}季`,
+                introText: '',
+                vipGroupId: '',
+                enabled: true,
+                sort: next.length + 1,
+              });
+              setDraft((d) => ({ ...(d || {}), seasons: next }));
+            }}
+            className="h-9 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold transition-colors"
+          >
+            + 添加分季
+          </button>
+        </div>
+
+        {(draft?.seasons || []).length === 0 ? (
+          <div className="text-sm text-slate-500 font-semibold">暂无分季（V4 建议至少配置 1 季）</div>
+        ) : (
+          <div className="space-y-4">
+            {(draft?.seasons || []).map((s, idx) => (
+              <div key={`${s.seasonId || 'season'}_${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-black text-slate-900">分季 #{idx + 1}</div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={s.enabled !== false}
+                        onChange={(e) => {
+                          const next = [...(draft?.seasons || [])];
+                          next[idx] = { ...next[idx], enabled: e.target.checked };
+                          setDraft((d) => ({ ...(d || {}), seasons: next }));
+                        }}
+                      />
+                      启用
+                    </label>
+                    <button
+                      onClick={() => {
+                        const next = [...(draft?.seasons || [])];
+                        next.splice(idx, 1);
+                        setDraft((d) => ({ ...(d || {}), seasons: next }));
+                      }}
+                      className="text-rose-600 hover:text-rose-700 text-xs font-black"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">seasonId *</label>
+                    <input
+                      type="text"
+                      value={s.seasonId || ''}
+                      onChange={(e) => {
+                        const next = [...(draft?.seasons || [])];
+                        next[idx] = { ...next[idx], seasonId: slugify(e.target.value) };
+                        setDraft((d) => ({ ...(d || {}), seasons: next }));
+                      }}
+                      className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      placeholder="例如: s1"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">季标题</label>
+                    <input
+                      type="text"
+                      value={s.title || ''}
+                      onChange={(e) => {
+                        const next = [...(draft?.seasons || [])];
+                        next[idx] = { ...next[idx], title: e.target.value };
+                        setDraft((d) => ({ ...(d || {}), seasons: next }));
+                      }}
+                      className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      placeholder="例如：第一季"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">季剧照（URL）</label>
+                    <input
+                      type="text"
+                      value={s.cover || ''}
+                      onChange={(e) => {
+                        const next = [...(draft?.seasons || [])];
+                        next[idx] = { ...next[idx], cover: e.target.value };
+                        setDraft((d) => ({ ...(d || {}), seasons: next }));
+                      }}
+                      className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      placeholder="https://..."
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">VIP群 chat_id *</label>
+                    <input
+                      type="text"
+                      value={s.vipGroupId || ''}
+                      onChange={(e) => {
+                        const next = [...(draft?.seasons || [])];
+                        next[idx] = { ...next[idx], vipGroupId: e.target.value };
+                        setDraft((d) => ({ ...(d || {}), seasons: next }));
+                      }}
+                      className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      placeholder="-100123456789"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">剧情介绍标题</label>
+                  <input
+                    type="text"
+                    value={s.introTitle || ''}
+                    onChange={(e) => {
+                      const next = [...(draft?.seasons || [])];
+                      next[idx] = { ...next[idx], introTitle: e.target.value };
+                      setDraft((d) => ({ ...(d || {}), seasons: next }));
+                    }}
+                    className="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">剧情详情</label>
+                  <textarea
+                    rows="4"
+                    value={s.introText || ''}
+                    onChange={(e) => {
+                      const next = [...(draft?.seasons || [])];
+                      next[idx] = { ...next[idx], introText: e.target.value };
+                      setDraft((d) => ({ ...(d || {}), seasons: next }));
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  ></textarea>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+        <div className="space-y-1">
+          <div className="text-base font-black text-slate-900">土豪专区（Super VIP）</div>
+          <div className="text-xs text-slate-500 font-medium">全季订阅进入一个独立的土豪群</div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-6">
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-sm font-bold text-slate-700">启用土豪专区</div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={Boolean(draft?.superVip?.enabled)}
+                onChange={(e) => setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), enabled: e.target.checked } }))}
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+            </label>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700">土豪群 chat_id *</label>
+            <input
+              type="text"
+              value={draft?.superVip?.groupId || ''}
+              onChange={(e) => setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), groupId: e.target.value } }))}
+              className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-mono outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              placeholder="-100123456789"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700">标题</label>
+            <input
+              type="text"
+              value={draft?.superVip?.title || ''}
+              onChange={(e) => setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), title: e.target.value } }))}
+              className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              placeholder="例如：土豪专区"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700">按钮文案</label>
+            <input
+              type="text"
+              value={draft?.superVip?.buttonText || ''}
+              onChange={(e) => setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), buttonText: e.target.value } }))}
+              className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              placeholder="例如：全季订阅（尊享）"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-bold text-slate-700">说明</label>
+          <textarea
+            rows="3"
+            value={draft?.superVip?.desc || ''}
+            onChange={(e) => setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), desc: e.target.value } }))}
+            className="w-full bg-slate-100 border border-slate-200 rounded-xl py-3 px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+          ></textarea>
+        </div>
+
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700">最低应付（分）</label>
+            <input
+              type="number"
+              value={draft?.superVip?.pricing?.minPayFen ?? 100}
+              onChange={(e) => setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), pricing: { ...(d?.superVip?.pricing || {}), minPayFen: Number(e.target.value || 0) } } }))}
+              className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-mono outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              placeholder="100"
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-sm font-bold text-slate-700">启用升级价</div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={draft?.superVip?.pricing?.upgradeEnabled !== false}
+                onChange={(e) => setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), pricing: { ...(d?.superVip?.pricing || {}), upgradeEnabled: e.target.checked } } }))}
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+            </label>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <div className="text-sm font-black text-slate-900">全季套餐覆盖</div>
+              <div className="text-xs text-slate-500 font-medium">如不开启，则使用全局默认套餐</div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={Boolean(draft?.superVip?.planOverride)}
+                onChange={(e) => setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), planOverride: e.target.checked } }))}
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+            </label>
+          </div>
+
+          <div className={`space-y-4 ${!draft?.superVip?.planOverride ? 'opacity-50 pointer-events-none' : ''}`}>
+            {(draft?.superVip?.plans || []).map((p, idx) => (
+              <div key={idx} className="flex items-center justify-between text-sm gap-2">
+                <input
+                  type="text"
+                  value={p.label}
+                  onChange={(e) => {
+                    const nextPlans = [...(draft.superVip.plans || [])];
+                    nextPlans[idx].label = e.target.value;
+                    setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), plans: nextPlans } }));
+                  }}
+                  className="w-24 h-9 bg-white border border-slate-200 rounded-xl px-3 text-slate-700 font-semibold outline-none"
+                  placeholder="套餐名"
+                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={p.days}
+                    onChange={(e) => {
+                      const nextPlans = [...(draft.superVip.plans || [])];
+                      nextPlans[idx].days = Number(e.target.value) || 0;
+                      setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), plans: nextPlans } }));
+                    }}
+                    className="w-20 h-9 bg-white border border-slate-200 rounded-xl px-3 text-right font-mono text-sm outline-none"
+                    placeholder="天数"
+                  />
+                  <span className="text-slate-500 text-xs">天</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs">￥</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={p.priceCny}
+                    onChange={(e) => {
+                      const nextPlans = [...(draft.superVip.plans || [])];
+                      nextPlans[idx].priceCny = Number(e.target.value) || 0;
+                      setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), plans: nextPlans } }));
+                    }}
+                    className="w-24 h-9 bg-white border border-slate-200 rounded-xl px-3 text-right font-mono text-sm outline-none"
+                    placeholder="价格"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    const nextPlans = [...(draft.superVip.plans || [])];
+                    nextPlans.splice(idx, 1);
+                    setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), plans: nextPlans } }));
+                  }}
+                  className="text-rose-500 hover:text-rose-600 text-xs font-bold px-2"
+                >
+                  删除
+                </button>
+              </div>
+            ))}
+            {draft?.superVip?.planOverride ? (
+              <button
+                onClick={() => {
+                  const nextPlans = [...(draft.superVip.plans || [])];
+                  nextPlans.push({ id: `plan_${Date.now()}`, label: '新套餐', days: 30, priceCny: 9.9, enabled: true });
+                  setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), plans: nextPlans } }));
+                }}
+                className="text-amber-600 hover:text-amber-700 text-sm font-bold mt-2"
+              >
+                + 添加全季套餐
+              </button>
+            ) : null}
           </div>
         </div>
       </div>

@@ -82,7 +82,7 @@ const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
                   }}
                   onSubscribe={() => {
                     onSelectSeries(item);
-                    onNavigate('plans');
+                    onNavigate('season-select');
                   }} 
                 />
               ))}

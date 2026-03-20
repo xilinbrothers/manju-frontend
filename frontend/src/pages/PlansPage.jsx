@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
 
-const PlansPage = ({ series, onSelectPlan, onNavigate }) => {
+const PlansPage = ({ series, targetType, seasonId, displayTitle, onSelectPlan, onNavigate }) => {
   const [plans, setPlans] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -13,7 +13,11 @@ const PlansPage = ({ series, onSelectPlan, onNavigate }) => {
       try {
         setError('');
         setIsLoading(true);
-        const qs = series?.id ? `?series_id=${encodeURIComponent(series.id)}` : '';
+        const qsParts = [];
+        if (series?.id) qsParts.push(`series_id=${encodeURIComponent(series.id)}`);
+        if (targetType) qsParts.push(`target_type=${encodeURIComponent(targetType)}`);
+        if (seasonId) qsParts.push(`season_id=${encodeURIComponent(seasonId)}`);
+        const qs = qsParts.length > 0 ? `?${qsParts.join('&')}` : '';
         const data = await apiFetchJson(`/api/plans${qs}`);
         if (cancelled) return;
         const list = Array.isArray(data) ? data : [];
@@ -37,7 +41,7 @@ const PlansPage = ({ series, onSelectPlan, onNavigate }) => {
     return () => {
       cancelled = true;
     };
-  }, [series?.id]);
+  }, [series?.id, targetType, seasonId]);
 
   const currentPlan = useMemo(() => {
     return plans.find((p) => p.id === selectedId) || plans.find((p) => p.enabled !== false) || null;
@@ -55,7 +59,7 @@ const PlansPage = ({ series, onSelectPlan, onNavigate }) => {
           />
         </div>
         <div className="flex flex-col justify-center space-y-2">
-          <h3 className="text-[16px] font-bold leading-tight">{series?.title || '霸道总裁的替身娇妻'}</h3>
+          <h3 className="text-[16px] font-bold leading-tight">{displayTitle || series?.title || '选择套餐'}</h3>
           <div className="space-y-1">
             <div className="flex items-center text-[11px] text-gray-400">
               <span className="text-green-500 mr-2">✓</span> 全集解锁，高清观看

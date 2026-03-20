@@ -16,6 +16,22 @@ const PlanSchema = new mongoose.Schema(
   { _id: false, suppressReservedKeysWarning: true }
 );
 
+const SeasonSchema = new mongoose.Schema(
+  {
+    seasonId: { type: String, required: true },
+    title: { type: String, default: '' },
+    cover: { type: String, default: '' },
+    introTitle: { type: String, default: '' },
+    introText: { type: String, default: '' },
+    vipGroupId: { type: String, default: '' },
+    enabled: { type: Boolean, default: true },
+    sort: { type: Number, default: 0 },
+    planOverride: { type: Boolean, default: false },
+    plans: { type: [PlanSchema], default: [] },
+  },
+  { _id: false, suppressReservedKeysWarning: true }
+);
+
 const SeriesSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true, index: true },
@@ -30,6 +46,20 @@ const SeriesSchema = new mongoose.Schema(
     vipGroupId: { type: String, default: '' },
     planOverride: { type: Boolean, default: false },
     plans: { type: [PlanSchema], default: [] },
+    seasons: { type: [SeasonSchema], default: [] },
+    superVip: {
+      enabled: { type: Boolean, default: false },
+      groupId: { type: String, default: '' },
+      title: { type: String, default: '' },
+      desc: { type: String, default: '' },
+      buttonText: { type: String, default: '' },
+      planOverride: { type: Boolean, default: false },
+      plans: { type: [PlanSchema], default: [] },
+      pricing: {
+        minPayFen: { type: Number, default: 100 },
+        upgradeEnabled: { type: Boolean, default: true },
+      },
+    },
   },
   { timestamps: true }
 );

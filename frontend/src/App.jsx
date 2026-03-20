@@ -4,6 +4,7 @@ import SeriesListPage from './pages/SeriesListPage';
 import PlansPage from './pages/PlansPage';
 import MySubscriptionsPage from './pages/MySubscriptionsPage';
 import PayRedirectPage from './pages/PayRedirectPage';
+import SeasonSelectPage from './pages/SeasonSelectPage';
 // AdminApp 不需要在 App.jsx 中导入，因为它在 main.jsx 中通过路由直接使用
 import { getTranslation } from './utils/i18n';
 import { apiFetchJson, getApiBaseUrl } from './utils/api';
@@ -12,7 +13,12 @@ const App = () => {
   const [currentPage, setCurrentPage] = useState('welcome');
   const [selectedSeries, setSelectedSeries] = useState(null);
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedTargetType, setSelectedTargetType] = useState('series');
+  const [selectedSeasonId, setSelectedSeasonId] = useState('');
+  const [selectedDisplayTitle, setSelectedDisplayTitle] = useState('');
   const [payOrderId, setPayOrderId] = useState('');
+  const [quote, setQuote] = useState(null);
+  const [quoteError, setQuoteError] = useState('');
 
   // 多语言支持
   const lang = useMemo(() => {
@@ -34,14 +40,22 @@ const App = () => {
         const list = await apiFetchJson('/api/series');
         const found = Array.isArray(list) ? list.find((s) => String(s?.id) === String(id)) : null;
         setSelectedSeries(found || { id: String(id) });
-        setCurrentPage('plans');
+        setSelectedPlan(null);
+        setSelectedTargetType('series');
+        setSelectedSeasonId('');
+        setSelectedDisplayTitle('');
+        setCurrentPage('season-select');
       } catch {
         setSelectedSeries({ id: String(id) });
-        setCurrentPage('plans');
+        setSelectedPlan(null);
+        setSelectedTargetType('series');
+        setSelectedSeasonId('');
+        setSelectedDisplayTitle('');
+        setCurrentPage('season-select');
       }
     };
 
-    if ((page === 'plans' || page === 'renew') && seriesId) {
+    if ((page === 'plans' || page === 'renew' || page === 'season-select') && seriesId) {
       setPlansForSeriesId(seriesId);
       return;
     }
@@ -73,6 +87,8 @@ const App = () => {
           series_id: selectedSeries.id,
           plan_id: selectedPlan.id,
           payment_method: paymentMethod,
+          target_type: selectedTargetType,
+          season_id: selectedSeasonId,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -91,6 +107,45 @@ const App = () => {
       alert(e?.message || '支付失败');
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        setQuoteError('');
+        setQuote(null);
+        if (currentPage !== 'payment') return;
+        if (!selectedSeries?.id || !selectedPlan?.id) return;
+        const initData = window.Telegram?.WebApp?.initData || '';
+        const baseUrl = getApiBaseUrl();
+        const res = await fetch(`${baseUrl}/api/orders/quote`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(initData ? { 'x-telegram-init-data': initData } : {}),
+          },
+          body: JSON.stringify({
+            series_id: selectedSeries.id,
+            plan_id: selectedPlan.id,
+            target_type: selectedTargetType,
+            season_id: selectedSeasonId,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || !data?.success) throw new Error(data?.message || `报价失败: ${res.status}`);
+        setQuote(data.quote || null);
+      } catch (e) {
+        if (cancelled) return;
+        setQuoteError(e?.message || '报价失败');
+        setQuote(null);
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPage, selectedSeries?.id, selectedPlan?.id, selectedTargetType, selectedSeasonId]);
 
   useEffect(() => {
     // 1. 通知 Telegram SDK 已就绪
@@ -126,7 +181,8 @@ const App = () => {
       tg.BackButton.show();
       const handleBack = () => {
         if (currentPage === 'series') navigate('welcome');
-        else if (currentPage === 'plans') navigate('series');
+        else if (currentPage === 'season-select') navigate('series');
+        else if (currentPage === 'plans') navigate('season-select');
         else if (currentPage === 'payment') navigate('plans');
         else if (currentPage === 'pay-redirect') navigate('payment');
         else navigate('welcome');
@@ -142,8 +198,9 @@ const App = () => {
 
     // 2. 处理主按钮 (仅在支付页显示)
     if (currentPage === 'payment') {
+      const amount = quote?.payAmountFen ? (Number(quote.payAmountFen) / 100).toFixed(2) : (selectedPlan?.price || '69.9');
       tg.MainButton.setParams({
-        text: `确认支付 ￥${selectedPlan?.price || '69.9'}`,
+        text: `确认支付 ￥${amount}`,
         color: '#3B82F6',
         is_visible: true
       });
@@ -156,7 +213,7 @@ const App = () => {
     } else {
       tg.MainButton.hide();
     }
-  }, [currentPage, selectedPlan, selectedSeries]);
+  }, [currentPage, selectedPlan, selectedSeries, quote]);
 
   const navigate = (page) => {
     setCurrentPage(page);
@@ -171,14 +228,35 @@ const App = () => {
         return (
           <SeriesListPage 
             onNavigate={navigate} 
-            onSelectSeries={setSelectedSeries} 
+            onSelectSeries={(s) => {
+              setSelectedSeries(s);
+              setSelectedPlan(null);
+              setSelectedTargetType('series');
+              setSelectedSeasonId('');
+              setSelectedDisplayTitle('');
+            }} 
             t={t}
+          />
+        );
+      case 'season-select':
+        return (
+          <SeasonSelectPage
+            seriesId={selectedSeries?.id}
+            onSelectTarget={({ targetType, seasonId, displayTitle }) => {
+              setSelectedTargetType(targetType);
+              setSelectedSeasonId(seasonId);
+              setSelectedDisplayTitle(displayTitle || '');
+            }}
+            onNavigate={navigate}
           />
         );
       case 'plans':
         return (
           <PlansPage 
             series={selectedSeries} 
+            targetType={selectedTargetType}
+            seasonId={selectedSeasonId}
+            displayTitle={selectedDisplayTitle}
             onSelectPlan={setSelectedPlan} 
             onNavigate={navigate} 
             t={t}
@@ -200,15 +278,38 @@ const App = () => {
             <div className="bg-[#1A2333] rounded-3xl p-6 mb-6 border border-gray-800/50 space-y-5 shadow-xl">
               <div className="flex justify-between items-center text-[14px]">
                 <span className="text-gray-400">{t.sub_series}</span>
-                <span className="font-bold">{selectedSeries?.title || 'Series Name'}</span>
+                <span className="font-bold">{selectedDisplayTitle || selectedSeries?.title || 'Series Name'}</span>
               </div>
               <div className="flex justify-between items-center text-[14px]">
                 <span className="text-gray-400">{t.sub_duration}</span>
                 <span className="font-bold">{selectedPlan?.label || '30 days'}</span>
               </div>
+              {quoteError ? (
+                <div className="bg-red-500/10 border border-red-500/20 text-red-300 rounded-2xl p-3 text-[12px]">
+                  {quoteError}
+                </div>
+              ) : quote?.targetType === 'super' ? (
+                <div className="rounded-2xl border border-gray-800/50 bg-[#0F172A]/40 p-4 space-y-2">
+                  <div className="flex justify-between items-center text-[13px]">
+                    <span className="text-gray-400">全季原价</span>
+                    <span className="font-mono font-bold">￥{(Number(quote.baseAmountFen || 0) / 100).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[13px]">
+                    <span className="text-gray-400">已购季抵扣</span>
+                    <span className="font-mono font-bold text-green-400">-￥{(Number(quote.discountFen || 0) / 100).toFixed(2)}</span>
+                  </div>
+                  {Number(quote.minPayFen || 0) > 0 ? (
+                    <div className="text-[11px] text-gray-500">
+                      最低应付 ￥{(Number(quote.minPayFen || 0) / 100).toFixed(2)}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="border-t border-gray-800/50 pt-4 flex justify-between items-center">
                 <span className="text-gray-400 text-[14px]">{t.order_amount}</span>
-                <span className="text-[22px] font-black font-mono text-white">￥{selectedPlan?.price || '69.9'}</span>
+                <span className="text-[22px] font-black font-mono text-white">
+                  ￥{quote?.payAmountFen ? (Number(quote.payAmountFen) / 100).toFixed(2) : (selectedPlan?.price || '69.9')}
+                </span>
               </div>
             </div>
 
@@ -311,10 +412,18 @@ const App = () => {
                 const list = await apiFetchJson('/api/series');
                 const found = Array.isArray(list) ? list.find((s) => String(s?.id) === String(seriesId)) : null;
                 setSelectedSeries(found || { id: String(seriesId) });
-                navigate('plans');
+                setSelectedPlan(null);
+                setSelectedTargetType('series');
+                setSelectedSeasonId('');
+                setSelectedDisplayTitle('');
+                navigate('season-select');
               } catch {
                 setSelectedSeries({ id: String(seriesId) });
-                navigate('plans');
+                setSelectedPlan(null);
+                setSelectedTargetType('series');
+                setSelectedSeasonId('');
+                setSelectedDisplayTitle('');
+                navigate('season-select');
               }
             }}
           />

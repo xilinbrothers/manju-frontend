@@ -52,7 +52,7 @@ const getEffectiveWebAppUrl = async () => {
   return WEB_APP_URL;
 };
 
-const buildRenewUrl = async (seriesId) => `${await getEffectiveWebAppUrl()}/?page=plans&series_id=${encodeURIComponent(String(seriesId || ''))}`;
+const buildRenewUrl = async (seriesId) => `${await getEffectiveWebAppUrl()}/?page=season-select&series_id=${encodeURIComponent(String(seriesId || ''))}`;
 
 const initMongo = async () => {
   try {
@@ -233,6 +233,49 @@ const computeStatus = (expireAtIso, expiringDays) => {
   return 'active';
 };
 
+const normalizeTargetType = (v) => {
+  const x = String(v || '').trim().toLowerCase();
+  if (x === 'super') return 'super';
+  if (x === 'season') return 'season';
+  if (x === 'series') return 'series';
+  return '';
+};
+
+const normalizeSeasonId = (targetType, seasonId) => {
+  if (targetType === 'super') return 'all';
+  if (targetType === 'series') return '';
+  return String(seasonId || '').trim();
+};
+
+const buildSubscriptionKey = (seriesId, targetType, seasonId) => {
+  const t = normalizeTargetType(targetType) || 'season';
+  const s = normalizeSeasonId(t, seasonId);
+  const sid = String(seriesId || '').trim();
+  if (t === 'series') return sid;
+  return `${sid}:${t}:${s}`;
+};
+
+const parseSubscriptionKey = (key) => {
+  const parts = String(key || '').split(':');
+  if (parts.length < 2) {
+    const seriesId = String(key || '').trim();
+    if (!seriesId) return null;
+    return { seriesId, targetType: 'series', seasonId: '' };
+  }
+  const seriesId = parts[0] || '';
+  const targetType = normalizeTargetType(parts[1]) || '';
+  const seasonId = parts.slice(2).join(':') || '';
+  if (!seriesId || !targetType) return null;
+  return { seriesId, targetType, seasonId };
+};
+
+const isSubscriptionOk = (sub) => {
+  if (!sub) return false;
+  const planDays = Number(sub.planDays || 0);
+  const expireAt = sub?.expireAt ? new Date(sub.expireAt).getTime() : 0;
+  return planDays === 0 || (expireAt && expireAt > Date.now());
+};
+
 const generateAlipaySign = (params, merchantKey) => {
   const filtered = Object.entries(params)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -308,9 +351,67 @@ app.get('/api/series', (req, res) => {
   })().catch(() => res.status(500).json({ error: 'server_error' }));
 });
 
+app.get('/api/series/:id', (req, res) => {
+  (async () => {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ success: false, message: '参数缺失' });
+    const series = mongoReady ? await Series.findOne({ id, enabled: { $ne: false } }).lean() : (() => {
+      const store = loadStore();
+      return (store.series || []).find((s) => String(s?.id || '') === id && s?.enabled !== false) || null;
+    })();
+    if (!series) return res.status(404).json({ success: false, message: '剧集不存在' });
+
+    const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+    const mappedSeasons = seasons
+      .filter((s) => s && s.enabled !== false)
+      .sort((a, b) => Number(a?.sort || 0) - Number(b?.sort || 0))
+      .map((s) => ({
+        seasonId: String(s.seasonId || ''),
+        title: String(s.title || ''),
+        cover: String(s.cover || ''),
+        introTitle: String(s.introTitle || ''),
+        introText: String(s.introText || ''),
+        enabled: s.enabled !== false,
+        sort: Number(s.sort || 0) || 0,
+      }));
+
+    const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+    const superVipEnabled = Boolean(superVip.enabled) && Boolean(superVip.groupId);
+
+    return res.json({
+      success: true,
+      item: {
+        id: series.id,
+        title: series.title,
+        description: series.description,
+        cover: series.cover,
+        status: series.status,
+        total: series.total,
+        category: series.category,
+        seasons: mappedSeasons,
+        superVip: superVipEnabled
+          ? {
+              enabled: true,
+              title: String(superVip.title || ''),
+              desc: String(superVip.desc || ''),
+              buttonText: String(superVip.buttonText || ''),
+              pricing: {
+                minPayFen: Number(superVip?.pricing?.minPayFen || 100) || 100,
+                upgradeEnabled: superVip?.pricing?.upgradeEnabled !== false,
+              },
+            }
+          : { enabled: false },
+      },
+      updatedAt: dateNowIso(),
+    });
+  })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
+});
+
 app.get('/api/plans', (req, res) => {
   (async () => {
     const seriesId = req.query.series_id;
+    const targetType = normalizeTargetType(req.query.target_type) || 'series';
+    const seasonId = normalizeSeasonId(targetType, req.query.season_id);
     let series = null;
     let globalPlans = [];
     if (mongoReady) {
@@ -323,8 +424,27 @@ app.get('/api/plans', (req, res) => {
       const cfg = await getConfig();
       globalPlans = Array.isArray(cfg.plans) ? cfg.plans : [];
     }
+    if (!series) return res.json([]);
+
+    let entity = series;
+    if (targetType === 'season') {
+      const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+      if (seasons.length > 0) {
+        if (!seasonId) return res.status(400).json({ error: 'season_id_required' });
+        const season = seasons.find((s) => String(s?.seasonId || '') === String(seasonId));
+        if (!season || season.enabled === false) return res.status(404).json({ error: 'season_not_found' });
+        entity = season;
+      }
+    }
+    if (targetType === 'super') {
+      const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+      if (!superVip.enabled || !superVip.groupId) return res.status(400).json({ error: 'super_vip_not_enabled' });
+      entity = superVip;
+    }
     let plans = [];
-    if (series && series.planOverride && Array.isArray(series.plans) && series.plans.length > 0) {
+    if (entity && entity.planOverride && Array.isArray(entity.plans) && entity.plans.length > 0) {
+      plans = entity.plans;
+    } else if (targetType !== 'series' && series.planOverride && Array.isArray(series.plans) && series.plans.length > 0) {
       plans = series.plans;
     } else {
       plans = globalPlans;
@@ -387,6 +507,8 @@ app.post('/api/vip/invite-link', telegramAuth, async (req, res) => {
     const tgUser = req.tg?.user;
     const userId = String(tgUser?.id || '');
     const seriesId = String(req.body?.series_id || '').trim();
+    const targetType = normalizeTargetType(req.body?.target_type) || 'series';
+    const seasonId = normalizeSeasonId(targetType, req.body?.season_id);
     if (!userId) return res.status(401).json({ success: false, message: '未授权' });
     if (!seriesId) return res.status(400).json({ success: false, message: '参数缺失' });
     await upsertUserFromTg(tgUser);
@@ -398,23 +520,35 @@ app.post('/api/vip/invite-link', telegramAuth, async (req, res) => {
       series = (store.series || []).find((s) => s.id === seriesId) || null;
     }
     if (!series) return res.status(404).json({ success: false, message: '剧集不存在' });
-    if (!series.vipGroupId) return res.status(400).json({ success: false, message: '未配置VIP群' });
+    const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+    const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+    let groupId = '';
+    if (targetType === 'super') {
+      if (!superVip.enabled || !superVip.groupId) return res.status(400).json({ success: false, message: '土豪专区未启用' });
+      groupId = String(superVip.groupId || '');
+    } else if (targetType === 'season') {
+      if (!seasonId) return res.status(400).json({ success: false, message: '参数缺失' });
+      const season = seasons.find((s) => String(s?.seasonId || '') === String(seasonId));
+      if (!season || season.enabled === false) return res.status(404).json({ success: false, message: '分季不存在' });
+      groupId = String(season.vipGroupId || '');
+      if (!groupId) return res.status(400).json({ success: false, message: '未配置VIP群' });
+    } else {
+      groupId = String(series.vipGroupId || '');
+      if (!groupId) return res.status(400).json({ success: false, message: '未配置VIP群' });
+    }
 
     let sub = null;
     if (mongoReady) {
       const user = await User.findOne({ telegramId: userId }).lean();
-      sub = user?.subscriptions?.[seriesId] || null;
+      sub = user?.subscriptions?.[buildSubscriptionKey(seriesId, targetType, seasonId)] || null;
     } else {
       const store = loadStore();
-      sub = store.users?.[userId]?.subscriptions?.[seriesId] || null;
+      sub = store.users?.[userId]?.subscriptions?.[buildSubscriptionKey(seriesId, targetType, seasonId)] || null;
     }
-    const planDays = sub ? Number(sub.planDays || 0) : NaN;
-    const expireAt = sub?.expireAt ? new Date(sub.expireAt).getTime() : 0;
-    const ok = Boolean(sub) && (planDays === 0 || (expireAt && expireAt > Date.now()));
-    if (!ok) return res.status(403).json({ success: false, message: '订阅未激活或已到期' });
+    if (!isSubscriptionOk(sub)) return res.status(403).json({ success: false, message: '订阅未激活或已到期' });
 
-    const inviteLink = await createJoinRequestInviteLink(String(series.vipGroupId), 15 * 60);
-    return res.json({ success: true, invite_link: inviteLink, userId, seriesId, updatedAt: dateNowIso() });
+    const inviteLink = await createJoinRequestInviteLink(String(groupId), 15 * 60);
+    return res.json({ success: true, invite_link: inviteLink, userId, seriesId, targetType, seasonId, updatedAt: dateNowIso() });
   } catch (e) {
     return res.status(500).json({ success: false, message: e?.message || '生成邀请链接失败' });
   }
@@ -431,7 +565,9 @@ app.get('/api/user/subscriptions', telegramAuth, (req, res) => {
     const activeSubs = [];
     const expiredSubs = [];
 
-    const seriesIds = Object.keys(subs || {});
+    const keys = Object.keys(subs || {});
+    const parsedKeys = keys.map((k) => ({ key: k, parsed: parseSubscriptionKey(k) })).filter((x) => x.parsed);
+    const seriesIds = [...new Set(parsedKeys.map((x) => x.parsed.seriesId))];
     const seriesList = mongoReady
       ? await Series.find({ id: { $in: seriesIds } }).lean()
       : (() => {
@@ -439,10 +575,31 @@ app.get('/api/user/subscriptions', telegramAuth, (req, res) => {
           return Array.isArray(store.series) ? store.series : [];
         })();
 
-    for (const seriesId of seriesIds) {
-      const sub = subs[seriesId];
-      const series = (seriesList || []).find((s) => s.id === seriesId);
+    for (const x of parsedKeys) {
+      const { key, parsed } = x;
+      const sub = subs[key];
+      const series = (seriesList || []).find((s) => String(s?.id || '') === String(parsed.seriesId));
       if (!series) continue;
+      const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+      const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+      let displayTitle = String(series.title || '');
+      let cover = String(series.cover || '');
+      let hasVipGroup = false;
+      if (parsed.targetType === 'season') {
+        const season = seasons.find((s) => String(s?.seasonId || '') === String(parsed.seasonId));
+        if (season) {
+          displayTitle = `${displayTitle} ${String(season.title || '')}`.trim();
+          cover = String(season.cover || '') || cover;
+          hasVipGroup = Boolean(season.vipGroupId);
+        } else {
+          hasVipGroup = Boolean(series.vipGroupId);
+        }
+      } else if (parsed.targetType === 'super') {
+        displayTitle = `${displayTitle} 全季`.trim();
+        hasVipGroup = Boolean(superVip.enabled) && Boolean(superVip.groupId);
+      } else {
+        hasVipGroup = Boolean(series.vipGroupId);
+      }
       const expireAtIso = sub.expireAt;
       const status = computeStatus(expireAtIso, expiringDays);
       const remainDays = Math.max(0, Math.ceil((new Date(expireAtIso).getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
@@ -452,15 +609,17 @@ app.get('/api/user/subscriptions', telegramAuth, (req, res) => {
       const progress = isLifetime ? 0 : (totalDays ? Math.min(100, Math.max(0, Math.round(((totalDays - remainDays) / totalDays) * 100))) : 0);
       const planLabel = sub.planLabel || '';
       const payload = {
-        id: `sub_${tgUser.id}_${seriesId}`,
-        seriesId,
-        title: series.title,
+        id: `sub_${tgUser.id}_${key}`,
+        seriesId: String(parsed.seriesId || ''),
+        targetType: parsed.targetType,
+        seasonId: String(parsed.seasonId || ''),
+        title: displayTitle,
         plan: planLabel,
         remainingDays: isLifetime ? 99999 : remainDays,
         progress,
         status,
-        cover: series.cover,
-        hasVipGroup: Boolean(series.vipGroupId),
+        cover,
+        hasVipGroup,
         expireDate: isLifetime ? '永久有效' : formatDateZh(expireAtIso),
       };
       if (status === 'expired') expiredSubs.push(payload);
@@ -501,6 +660,8 @@ app.post('/api/admin/series', (req, res) => {
       vipGroupId: body.vipGroupId || '',
       planOverride: Boolean(body.planOverride),
       plans: Array.isArray(body.plans) ? body.plans : [],
+      seasons: Array.isArray(body.seasons) ? body.seasons : [],
+      superVip: body.superVip && typeof body.superVip === 'object' ? body.superVip : {},
     };
 
     if (mongoReady) {
@@ -539,6 +700,8 @@ app.put('/api/admin/series/:id', (req, res) => {
         vipGroupId: body.vipGroupId !== undefined ? body.vipGroupId : prev.vipGroupId,
         planOverride: body.planOverride !== undefined ? Boolean(body.planOverride) : prev.planOverride,
         plans: Array.isArray(body.plans) ? body.plans : prev.plans,
+        seasons: Array.isArray(body.seasons) ? body.seasons : prev.seasons,
+        superVip: body.superVip && typeof body.superVip === 'object' ? body.superVip : prev.superVip,
       };
       await Series.updateOne({ id }, { $set: nextItem });
       const updated = await Series.findOne({ id }).lean();
@@ -562,6 +725,8 @@ app.put('/api/admin/series/:id', (req, res) => {
       vipGroupId: body.vipGroupId !== undefined ? body.vipGroupId : prev.vipGroupId,
       planOverride: body.planOverride !== undefined ? Boolean(body.planOverride) : prev.planOverride,
       plans: Array.isArray(body.plans) ? body.plans : prev.plans,
+      seasons: Array.isArray(body.seasons) ? body.seasons : prev.seasons,
+      superVip: body.superVip && typeof body.superVip === 'object' ? body.superVip : prev.superVip,
     };
     const nextSeries = [...store.series];
     nextSeries[idx] = nextItem;
@@ -813,7 +978,9 @@ app.get('/api/admin/telegram/group-check', (req, res) => {
       const seriesId = String(s?.id || '');
       const title = String(s?.title || '');
       const trialGroupId = String(s?.trialGroupId || '');
-      const vipGroupId = String(s?.vipGroupId || '');
+      const legacyVipGroupId = String(s?.vipGroupId || '');
+      const seasons = Array.isArray(s?.seasons) ? s.seasons : [];
+      const superVip = s?.superVip && typeof s.superVip === 'object' ? s.superVip : {};
 
       const checkOne = async (chatId) => {
         if (!chatId) return { ok: false, error: 'not_set' };
@@ -841,8 +1008,21 @@ app.get('/api/admin/telegram/group-check', (req, res) => {
       };
 
       const trial = await checkOne(trialGroupId);
-      const vip = await checkOne(vipGroupId);
-      items.push({ id: seriesId, title, trialGroupId, vipGroupId, trial, vip });
+      const legacyVip = await checkOne(legacyVipGroupId);
+      const seasonChecks = [];
+      for (const ss of seasons || []) {
+        if (!ss || ss.enabled === false) continue;
+        seasonChecks.push({
+          seasonId: String(ss.seasonId || ''),
+          title: String(ss.title || ''),
+          vipGroupId: String(ss.vipGroupId || ''),
+          check: await checkOne(String(ss.vipGroupId || '')),
+        });
+      }
+      const superVipCheck = superVip?.enabled && superVip?.groupId
+        ? { enabled: true, groupId: String(superVip.groupId || ''), title: String(superVip.title || ''), check: await checkOne(String(superVip.groupId || '')) }
+        : { enabled: false, groupId: '', title: '' };
+      items.push({ id: seriesId, title, trialGroupId, trial, legacyVipGroupId, legacyVip, seasons: seasonChecks, superVip: superVipCheck });
     }
 
     return res.json({ bot: { id: botId, username: me?.username || '' }, items, updatedAt: dateNowIso() });
@@ -937,16 +1117,39 @@ const activateSubscription = async ({ orderId, telegramId }) => {
     if (!order) throw new Error('订单不存在');
     const series = await Series.findOne({ id: order.seriesId }).lean();
     if (!series) throw new Error('剧集不存在');
-    const plan = (series.plans || []).find((p) => p.id === order.planId);
-    if (!plan) throw new Error('套餐不存在');
+    const targetType = normalizeTargetType(order.targetType) || 'series';
+    const seasonId = normalizeSeasonId(targetType, order.seasonId);
+    const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+    const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+    let entity = series;
+    let displayTitle = String(series.title || '');
+    if (targetType === 'season' && seasons.length > 0) {
+      const season = seasons.find((s) => String(s?.seasonId || '') === String(seasonId));
+      if (!season || season.enabled === false) throw new Error('分季不存在');
+      entity = season;
+      displayTitle = `${displayTitle} ${String(season.title || '')}`.trim();
+    }
+    if (targetType === 'super') {
+      if (!superVip.enabled || !superVip.groupId) throw new Error('土豪专区未启用');
+      entity = superVip;
+      displayTitle = `${displayTitle} 全季`.trim();
+    }
 
     const cfg = await getConfig();
     const expiringDays = Number(cfg.settings?.expiringDays || 7);
     const userId = String(telegramId);
+    const globalPlans = Array.isArray(cfg.plans) ? cfg.plans : [];
+    let plans = [];
+    if (entity && entity.planOverride && Array.isArray(entity.plans) && entity.plans.length > 0) plans = entity.plans;
+    else if (targetType !== 'series' && series.planOverride && Array.isArray(series.plans) && series.plans.length > 0) plans = series.plans;
+    else plans = globalPlans;
+    const plan = (plans || []).find((p) => String(p?.id || '') === String(order.planId || ''));
+    if (!plan) throw new Error('套餐不存在');
 
     await upsertUserFromTg({ id: userId });
     const user = await User.findOne({ telegramId: userId }).lean();
-    const prevSub = user?.subscriptions?.[series.id] || null;
+    const subKey = buildSubscriptionKey(series.id, targetType, seasonId);
+    const prevSub = user?.subscriptions?.[subKey] || null;
     const now = Date.now();
     const prevExpire = prevSub?.expireAt ? new Date(prevSub.expireAt).getTime() : 0;
     const base = Math.max(now, prevExpire || 0);
@@ -958,12 +1161,17 @@ const activateSubscription = async ({ orderId, telegramId }) => {
 
     const updatedSub = {
       seriesId: series.id,
+      targetType,
+      seasonId,
       planId: plan.id,
       planLabel: plan.label,
       planDays: plan.days,
       expireAt,
       status,
       vipInviteLink: '',
+      baseAmountFen: Number(order.baseAmountFen || 0) || Math.round((Number(plan.priceCny || 0) || 0) * 100),
+      discountFen: Number(order.discountFen || 0) || 0,
+      payAmountFen: Number(order.payAmountFen || 0) || Math.round((Number(order.amountCny || 0) || 0) * 100),
       expiringNotifiedAtIso: '',
       expiredHandledAtIso: '',
       updatedAt: dateNowIso(),
@@ -973,7 +1181,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
       { telegramId: userId },
       {
         $set: {
-          [`subscriptions.${series.id}`]: updatedSub,
+          [`subscriptions.${subKey}`]: updatedSub,
           lastSeenAt: dateNowIso(),
         },
       }
@@ -985,7 +1193,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
       const webAppUrl = await getEffectiveWebAppUrl();
       await bot.telegram.sendMessage(
         userId,
-        `🎉 支付成功！《${series.title}》订阅已激活。\n\n请前往“我的订阅”点击进入VIP群（系统会为您生成一次性入群申请链接）。`,
+        `🎉 支付成功！《${displayTitle}》订阅已激活。\n\n请前往“我的订阅”点击进入群组（系统会为您生成一次性入群申请链接）。`,
         Markup.inlineKeyboard([[Markup.button.webApp('💎 我的订阅', `${webAppUrl}/my-subs`)]])
       );
     } catch {}
@@ -998,13 +1206,37 @@ const activateSubscription = async ({ orderId, telegramId }) => {
   if (!order) throw new Error('订单不存在');
   const series = (store.series || []).find((s) => s.id === order.seriesId);
   if (!series) throw new Error('剧集不存在');
-  const plan = (series.plans || []).find((p) => p.id === order.planId);
+  const targetType = normalizeTargetType(order.targetType) || 'series';
+  const seasonId = normalizeSeasonId(targetType, order.seasonId);
+  const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+  const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+  let entity = series;
+  let displayTitle = String(series.title || '');
+  if (targetType === 'season' && seasons.length > 0) {
+    const season = seasons.find((s) => String(s?.seasonId || '') === String(seasonId));
+    if (!season || season.enabled === false) throw new Error('分季不存在');
+    entity = season;
+    displayTitle = `${displayTitle} ${String(season.title || '')}`.trim();
+  }
+  if (targetType === 'super') {
+    if (!superVip.enabled || !superVip.groupId) throw new Error('土豪专区未启用');
+    entity = superVip;
+    displayTitle = `${displayTitle} 全季`.trim();
+  }
+  const cfg = next;
+  const globalPlans = Array.isArray(cfg.plans) ? cfg.plans : [];
+  let plans = [];
+  if (entity && entity.planOverride && Array.isArray(entity.plans) && entity.plans.length > 0) plans = entity.plans;
+  else if (targetType !== 'series' && series.planOverride && Array.isArray(series.plans) && series.plans.length > 0) plans = series.plans;
+  else plans = globalPlans;
+  const plan = (plans || []).find((p) => String(p?.id || '') === String(order.planId || ''));
   if (!plan) throw new Error('套餐不存在');
 
   const userId = String(telegramId);
   let next = upsertUser(store, { id: userId });
   const user = next.users?.[userId] || { telegramId: userId, subscriptions: {} };
-  const prevSub = user.subscriptions?.[series.id] || {};
+  const subKey = buildSubscriptionKey(series.id, targetType, seasonId);
+  const prevSub = user.subscriptions?.[subKey] || {};
   const now = Date.now();
   const prevExpire = prevSub.expireAt ? new Date(prevSub.expireAt).getTime() : 0;
   const base = Math.max(now, prevExpire || 0);
@@ -1017,12 +1249,17 @@ const activateSubscription = async ({ orderId, telegramId }) => {
 
   const updatedSub = {
     seriesId: series.id,
+    targetType,
+    seasonId,
     planId: plan.id,
     planLabel: plan.label,
     planDays: plan.days,
     expireAt,
     status,
     vipInviteLink: '',
+    baseAmountFen: Number(order.baseAmountFen || 0) || Math.round((Number(plan.priceCny || 0) || 0) * 100),
+    discountFen: Number(order.discountFen || 0) || 0,
+    payAmountFen: Number(order.payAmountFen || 0) || Math.round((Number(order.amountCny || 0) || 0) * 100),
     expiringNotifiedAtIso: '',
     expiredHandledAtIso: '',
     updatedAt: dateNowIso(),
@@ -1035,7 +1272,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
       lastSeenAt: dateNowIso(),
       subscriptions: {
         ...(user.subscriptions || {}),
-        [series.id]: updatedSub,
+        [subKey]: updatedSub,
       },
     },
   };
@@ -1055,7 +1292,7 @@ const activateSubscription = async ({ orderId, telegramId }) => {
     const webAppUrl = await getEffectiveWebAppUrl();
     await bot.telegram.sendMessage(
       userId,
-      `🎉 支付成功！《${series.title}》订阅已激活。\n\n请前往“我的订阅”点击进入VIP群（系统会为您生成一次性入群申请链接）。`,
+      `🎉 支付成功！《${displayTitle}》订阅已激活。\n\n请前往“我的订阅”点击进入群组（系统会为您生成一次性入群申请链接）。`,
       Markup.inlineKeyboard([[Markup.button.webApp('💎 我的订阅', `${webAppUrl}/my-subs`)]])
     );
   } catch {}
@@ -1063,10 +1300,71 @@ const activateSubscription = async ({ orderId, telegramId }) => {
   return next;
 };
 
+const computeOrderQuote = async ({ tgUser, series, cfg, planId, targetType, seasonId }) => {
+  const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+  const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+  let entity = series;
+  if (targetType === 'season' && seasons.length > 0) {
+    if (!seasonId) throw new Error('参数缺失');
+    const season = seasons.find((s) => String(s?.seasonId || '') === String(seasonId));
+    if (!season || season.enabled === false) throw new Error('分季不存在');
+    entity = season;
+  }
+  if (targetType === 'super') {
+    if (!superVip.enabled || !superVip.groupId) throw new Error('土豪专区未启用');
+    entity = superVip;
+  }
+  const globalPlans = Array.isArray(cfg.plans) ? cfg.plans : [];
+  let plans = [];
+  if (entity && entity.planOverride && Array.isArray(entity.plans) && entity.plans.length > 0) plans = entity.plans;
+  else if (targetType !== 'series' && series.planOverride && Array.isArray(series.plans) && series.plans.length > 0) plans = series.plans;
+  else plans = globalPlans;
+  const plan = (plans || []).find((p) => String(p?.id || '') === String(planId || ''));
+  if (!plan || plan.enabled === false) throw new Error('套餐不可用');
+
+  const baseAmountFen = Math.round((Number(plan.priceCny || 0) || 0) * 100);
+  if (!Number.isFinite(baseAmountFen) || baseAmountFen <= 0) throw new Error('套餐金额过低或不合法（需至少 0.01 元）');
+
+  let discountFrom = [];
+  let discountFen = 0;
+  if (targetType === 'super' && superVip?.pricing?.upgradeEnabled !== false) {
+    const uid = String(tgUser.id);
+    const subs = mongoReady
+      ? (await User.findOne({ telegramId: uid }).lean())?.subscriptions || {}
+      : (loadStore().users?.[uid]?.subscriptions || {});
+    const items = Object.entries(subs || {});
+    for (const [k, v] of items) {
+      const parsed = parseSubscriptionKey(k);
+      if (!parsed) continue;
+      if (parsed.seriesId !== String(series.id)) continue;
+      if (parsed.targetType !== 'season') continue;
+      if (!isSubscriptionOk(v)) continue;
+      const amountFen = Number(v?.payAmountFen || 0) || Math.round((Number(v?.amountCny || 0) || 0) * 100);
+      if (!amountFen || amountFen <= 0) continue;
+      discountFrom.push({ seasonId: parsed.seasonId, amountFen, subscriptionKey: k });
+      discountFen += amountFen;
+    }
+  }
+  const minPayFen = Number(superVip?.pricing?.minPayFen || 100) || 100;
+  const payAmountFen = targetType === 'super' ? Math.max(baseAmountFen - discountFen, minPayFen) : baseAmountFen;
+  if (!Number.isFinite(payAmountFen) || payAmountFen <= 0) throw new Error('下单金额不合法');
+  const amountCny = Number((payAmountFen / 100).toFixed(2));
+
+  return {
+    plan: { id: plan.id, label: plan.label, days: plan.days, priceCny: Number(plan.priceCny || 0) || 0 },
+    baseAmountFen,
+    discountFen: targetType === 'super' ? discountFen : 0,
+    payAmountFen,
+    minPayFen: targetType === 'super' ? minPayFen : 0,
+    discountFrom: targetType === 'super' ? discountFrom : [],
+    amountCny,
+  };
+};
+
 app.post('/api/orders', telegramAuth, async (req, res) => {
   try {
     const tgUser = req.tg?.user;
-    const { series_id, plan_id, payment_method } = req.body || {};
+    const { series_id, plan_id, payment_method, target_type, season_id } = req.body || {};
     if (!series_id || !plan_id || !payment_method) {
       return res.status(400).json({ success: false, message: '参数缺失' });
     }
@@ -1080,23 +1378,27 @@ app.post('/api/orders', telegramAuth, async (req, res) => {
       series = (store.series || []).find((s) => s.id === series_id) || null;
     }
     if (!series) return res.status(404).json({ success: false, message: '剧集不存在' });
-    const plan = (series.plans || []).find((p) => p.id === plan_id);
-    if (!plan || plan.enabled === false) return res.status(400).json({ success: false, message: '套餐不可用' });
+    const targetType = normalizeTargetType(target_type) || 'series';
+    const seasonId = normalizeSeasonId(targetType, season_id);
+    const cfg = await getConfig();
+    const quote = await computeOrderQuote({ tgUser, series, cfg, planId: plan_id, targetType, seasonId });
 
     const orderId = `ord_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-    const amountCny = Number(plan.priceCny || 0) || 0;
-    const amountFen = Math.round(amountCny * 100);
-    if (!Number.isFinite(amountFen) || amountFen <= 0) {
-      return res.status(400).json({ success: false, message: '套餐金额过低或不合法（需至少 0.01 元）' });
-    }
+    const amountCny = quote.amountCny;
     const order = {
       id: orderId,
       telegramId: String(tgUser.id),
       seriesId: series.id,
-      planId: plan.id,
-      planLabel: plan.label,
-      planDays: plan.days,
+      targetType,
+      seasonId,
+      planId: quote.plan.id,
+      planLabel: quote.plan.label,
+      planDays: quote.plan.days,
       amountCny,
+      baseAmountFen: quote.baseAmountFen,
+      discountFen: quote.discountFen,
+      payAmountFen: quote.payAmountFen,
+      discountFrom: quote.discountFrom,
       paymentMethod: String(payment_method),
       status: 'created',
       payUrl: '',
@@ -1122,6 +1424,16 @@ app.post('/api/orders', telegramAuth, async (req, res) => {
         success: true,
         order_id: orderId,
         pay: { type: 'alipay', url: `${getApiBaseUrlForBrowser(req)}/api/order/alipay?order_id=${encodeURIComponent(orderId)}` },
+        quote: {
+          seriesId: String(series.id || ''),
+          targetType,
+          seasonId,
+          baseAmountFen: quote.baseAmountFen,
+          discountFen: quote.discountFen,
+          payAmountFen: quote.payAmountFen,
+          minPayFen: quote.minPayFen,
+          discountFrom: quote.discountFrom,
+        },
       });
     }
 
@@ -1162,7 +1474,7 @@ app.get('/api/order/alipay', async (req, res) => {
     const createUrl = /\/api\/order\/create$/i.test(apiUrlTrimmed) ? apiUrlTrimmed : `${apiUrlTrimmed}/api/order/create`;
     const notifyUrl = `${getApiBaseUrlForBrowser(req)}/api/order/notify`;
     const productId = cfg.payment?.alipay?.productId ? String(cfg.payment.alipay.productId) : String(order.seriesId || '');
-    const amountFen = Math.round(Number(order.amountCny || 0) * 100);
+    const amountFen = Number(order.payAmountFen || 0) || Math.round(Number(order.amountCny || 0) * 100);
     if (!Number.isFinite(amountFen) || amountFen <= 0) return res.status(400).send('下单金额不合法（需至少 0.01 元）');
     const params = {
       merchant_no: merchantNo,
@@ -1240,7 +1552,7 @@ app.get('/api/order/alipay-url', async (req, res) => {
     const createUrl = /\/api\/order\/create$/i.test(apiUrlTrimmed) ? apiUrlTrimmed : `${apiUrlTrimmed}/api/order/create`;
     const notifyUrl = `${getApiBaseUrlForBrowser(req)}/api/order/notify`;
     const productId = cfg.payment?.alipay?.productId ? String(cfg.payment.alipay.productId) : String(order.seriesId || '');
-    const amountFen = Math.round(Number(order.amountCny || 0) * 100);
+    const amountFen = Number(order.payAmountFen || 0) || Math.round(Number(order.amountCny || 0) * 100);
     if (!Number.isFinite(amountFen) || amountFen <= 0) return res.status(400).json({ success: false, message: '下单金额不合法（需至少 0.01 元）' });
 
     const params = {
@@ -1295,6 +1607,46 @@ app.get('/api/order/alipay-url', async (req, res) => {
     return res.json({ success: true, url: payUrl, order_id: orderId });
   } catch (e) {
     return res.status(500).json({ success: false, message: e?.message || 'server_error' });
+  }
+});
+
+app.post('/api/orders/quote', telegramAuth, async (req, res) => {
+  try {
+    const tgUser = req.tg?.user;
+    const { series_id, plan_id, target_type, season_id } = req.body || {};
+    if (!series_id || !plan_id) return res.status(400).json({ success: false, message: '参数缺失' });
+    await upsertUserFromTg(tgUser);
+
+    let series = null;
+    if (mongoReady) series = await Series.findOne({ id: series_id }).lean();
+    else {
+      const store = loadStore();
+      series = (store.series || []).find((s) => s.id === series_id) || null;
+    }
+    if (!series) return res.status(404).json({ success: false, message: '剧集不存在' });
+    const targetType = normalizeTargetType(target_type) || 'series';
+    const seasonId = normalizeSeasonId(targetType, season_id);
+    const cfg = await getConfig();
+    const quote = await computeOrderQuote({ tgUser, series, cfg, planId: plan_id, targetType, seasonId });
+    return res.json({
+      success: true,
+      quote: {
+        seriesId: String(series.id || ''),
+        targetType,
+        seasonId,
+        planId: quote.plan.id,
+        planLabel: quote.plan.label,
+        planDays: quote.plan.days,
+        baseAmountFen: quote.baseAmountFen,
+        discountFen: quote.discountFen,
+        payAmountFen: quote.payAmountFen,
+        minPayFen: quote.minPayFen,
+        discountFrom: quote.discountFrom,
+      },
+      updatedAt: dateNowIso(),
+    });
+  } catch (e) {
+    return res.status(400).json({ success: false, message: e?.message || 'quote_failed' });
   }
 });
 
@@ -1451,11 +1803,40 @@ bot.on('chat_join_request', async (ctx) => {
     if (!chatId || !userId) return;
 
     let series = null;
+    let targetType = 'series';
+    let seasonId = '';
     if (mongoReady) {
-      series = await Series.findOne({ vipGroupId: chatId }).lean();
+      series = await Series.findOne({ 'superVip.groupId': chatId }).lean();
+      if (series?.id) {
+        targetType = 'super';
+        seasonId = 'all';
+      } else {
+        series = await Series.findOne({ 'seasons.vipGroupId': chatId }).lean();
+        if (series?.id) {
+          const season = (Array.isArray(series.seasons) ? series.seasons : []).find((s) => String(s?.vipGroupId || '') === chatId);
+          targetType = 'season';
+          seasonId = String(season?.seasonId || '');
+        } else {
+          series = await Series.findOne({ vipGroupId: chatId }).lean();
+        }
+      }
     } else {
       const store = loadStore();
-      series = (store.series || []).find((s) => String(s?.vipGroupId || '') === chatId) || null;
+      const list = store.series || [];
+      series = list.find((s) => String(s?.superVip?.groupId || '') === chatId) || null;
+      if (series?.id) {
+        targetType = 'super';
+        seasonId = 'all';
+      } else {
+        series = list.find((s) => Array.isArray(s?.seasons) && s.seasons.some((x) => String(x?.vipGroupId || '') === chatId)) || null;
+        if (series?.id) {
+          const season = (Array.isArray(series.seasons) ? series.seasons : []).find((s) => String(s?.vipGroupId || '') === chatId);
+          targetType = 'season';
+          seasonId = String(season?.seasonId || '');
+        } else {
+          series = list.find((s) => String(s?.vipGroupId || '') === chatId) || null;
+        }
+      }
     }
     if (!series?.id) {
       try {
@@ -1467,23 +1848,31 @@ bot.on('chat_join_request', async (ctx) => {
     let sub = null;
     if (mongoReady) {
       const user = await User.findOne({ telegramId: userId }).lean();
-      sub = user?.subscriptions?.[series.id] || null;
+      sub = user?.subscriptions?.[buildSubscriptionKey(series.id, targetType, seasonId)] || null;
     } else {
       const store = loadStore();
-      sub = store.users?.[userId]?.subscriptions?.[series.id] || null;
+      sub = store.users?.[userId]?.subscriptions?.[buildSubscriptionKey(series.id, targetType, seasonId)] || null;
     }
 
-    const planDays = sub ? Number(sub.planDays || 0) : NaN;
-    const expireAt = sub?.expireAt ? new Date(sub.expireAt).getTime() : 0;
-    const ok = Boolean(sub) && (planDays === 0 || (expireAt && expireAt > Date.now()));
-    if (!ok) {
+    if (!isSubscriptionOk(sub)) {
       try {
         await bot.telegram.declineChatJoinRequest(chatId, userId);
       } catch {}
       try {
+        const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+        const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+        let displayTitle = String(series.title || '');
+        if (targetType === 'season') {
+          const season = seasons.find((s) => String(s?.seasonId || '') === String(seasonId));
+          displayTitle = `${displayTitle} ${String(season?.title || '')}`.trim();
+        }
+        if (targetType === 'super') {
+          displayTitle = `${displayTitle} 全季`.trim();
+          if (superVip?.title) displayTitle = String(superVip.title || '').trim();
+        }
         await bot.telegram.sendMessage(
           userId,
-          `⏰ 您的《${series?.title || ''}》订阅未激活或已到期。请续费后再申请入群。`,
+          `⏰ 您的《${displayTitle}》订阅未激活或已到期。请续费后再申请入群。`,
           Markup.inlineKeyboard([[Markup.button.webApp('立即续费', await buildRenewUrl(series.id))]])
         );
       } catch {}
@@ -1494,7 +1883,7 @@ bot.on('chat_join_request', async (ctx) => {
       await bot.telegram.approveChatJoinRequest(chatId, userId);
     } catch {}
     try {
-      await bot.telegram.sendMessage(userId, `✅ 已通过《${series?.title || ''}》VIP群入群申请。`);
+      await bot.telegram.sendMessage(userId, `✅ 已通过入群申请。`);
     } catch {}
   } catch {}
 });
@@ -1542,7 +1931,7 @@ setInterval(async () => {
       const nowIso = nowDate.toISOString();
       const thresholdDate = new Date(nowDate.getTime() + expiringDays * 24 * 60 * 60 * 1000);
 
-      const seriesList = await Series.find({}).select('id title vipGroupId').lean();
+      const seriesList = await Series.find({}).select('id title vipGroupId seasons superVip').lean();
       const seriesMap = new Map((seriesList || []).map((s) => [String(s.id), s]));
 
       const basePipeline = [
@@ -1550,7 +1939,7 @@ setInterval(async () => {
         { $unwind: '$subs' },
         {
           $addFields: {
-            seriesId: '$subs.k',
+            subscriptionKey: '$subs.k',
             sub: '$subs.v',
             expireDate: {
               $dateFromString: {
@@ -1573,25 +1962,40 @@ setInterval(async () => {
             $or: [{ 'sub.expiringNotifiedAtIso': { $exists: false } }, { 'sub.expiringNotifiedAtIso': '' }],
           },
         },
-        { $project: { telegramId: 1, seriesId: 1, expireAt: '$sub.expireAt' } },
+        { $project: { telegramId: 1, subscriptionKey: 1, expireAt: '$sub.expireAt' } },
       ]);
 
       for (const item of expiringSubs || []) {
-        const seriesId = String(item.seriesId);
+        const subscriptionKey = String(item.subscriptionKey || '');
+        const parsed = parseSubscriptionKey(subscriptionKey);
+        if (!parsed) continue;
+        const seriesId = String(parsed.seriesId || '');
         const series = seriesMap.get(seriesId);
+        if (!series) continue;
+        const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+        const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+        let displayTitle = String(series.title || '');
+        if (parsed.targetType === 'season') {
+          const season = seasons.find((s) => String(s?.seasonId || '') === String(parsed.seasonId));
+          if (season?.title) displayTitle = `${displayTitle} ${String(season.title)}`.trim();
+        }
+        if (parsed.targetType === 'super') {
+          displayTitle = `${displayTitle} 全季`.trim();
+          if (superVip?.title) displayTitle = String(superVip.title || '').trim();
+        }
         const remainDays = Math.max(0, Math.ceil((new Date(item.expireAt).getTime() - nowDate.getTime()) / (24 * 60 * 60 * 1000)));
         try {
           await bot.telegram.sendMessage(
             String(item.telegramId),
-            `⏰ 您的《${series?.title || ''}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
+            `⏰ 您的《${displayTitle}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
             Markup.inlineKeyboard([[Markup.button.webApp('立即续费', await buildRenewUrl(seriesId))]])
           );
           await User.updateOne(
             { telegramId: String(item.telegramId) },
             {
               $set: {
-                [`subscriptions.${seriesId}.expiringNotifiedAtIso`]: nowIso,
-                [`subscriptions.${seriesId}.status`]: 'expiring',
+                [`subscriptions.${subscriptionKey}.expiringNotifiedAtIso`]: nowIso,
+                [`subscriptions.${subscriptionKey}.status`]: 'expiring',
               },
             }
           );
@@ -1607,22 +2011,40 @@ setInterval(async () => {
             $or: [{ 'sub.expiredHandledAtIso': { $exists: false } }, { 'sub.expiredHandledAtIso': '' }],
           },
         },
-        { $project: { telegramId: 1, seriesId: 1 } },
+        { $project: { telegramId: 1, subscriptionKey: 1 } },
       ]);
 
       for (const item of expiredSubs || []) {
-        const seriesId = String(item.seriesId);
+        const subscriptionKey = String(item.subscriptionKey || '');
+        const parsed = parseSubscriptionKey(subscriptionKey);
+        if (!parsed) continue;
+        const seriesId = String(parsed.seriesId || '');
         const series = seriesMap.get(seriesId);
+        if (!series) continue;
+        const seasons = Array.isArray(series.seasons) ? series.seasons : [];
+        const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+        let displayTitle = String(series.title || '');
+        let groupId = String(series.vipGroupId || '');
+        if (parsed.targetType === 'season') {
+          const season = seasons.find((s) => String(s?.seasonId || '') === String(parsed.seasonId));
+          if (season?.title) displayTitle = `${displayTitle} ${String(season.title)}`.trim();
+          groupId = String(season?.vipGroupId || '');
+        }
+        if (parsed.targetType === 'super') {
+          displayTitle = `${displayTitle} 全季`.trim();
+          if (superVip?.title) displayTitle = String(superVip.title || '').trim();
+          groupId = String(superVip?.groupId || '');
+        }
         try {
-          if (series?.vipGroupId) {
+          if (groupId) {
             try {
-              await bot.telegram.kickChatMember(series.vipGroupId, String(item.telegramId));
+              await bot.telegram.kickChatMember(groupId, String(item.telegramId));
             } catch {}
           }
           try {
             await bot.telegram.sendMessage(
               String(item.telegramId),
-              `⏰ 您的《${series?.title || ''}》订阅已到期。请续费后继续观看。`,
+              `⏰ 您的《${displayTitle}》订阅已到期。请续费后继续观看。`,
               Markup.inlineKeyboard([[Markup.button.webApp('立即续费', await buildRenewUrl(seriesId))]])
             );
           } catch {}
@@ -1630,8 +2052,8 @@ setInterval(async () => {
             { telegramId: String(item.telegramId) },
             {
               $set: {
-                [`subscriptions.${seriesId}.expiredHandledAtIso`]: nowIso,
-                [`subscriptions.${seriesId}.status`]: 'expired',
+                [`subscriptions.${subscriptionKey}.expiredHandledAtIso`]: nowIso,
+                [`subscriptions.${subscriptionKey}.status`]: 'expired',
               },
             }
           );
@@ -1653,40 +2075,69 @@ setInterval(async () => {
     for (const uid of Object.keys(users)) {
       const u = users[uid];
       const subs = u.subscriptions || {};
-      for (const seriesId of Object.keys(subs)) {
-        const sub = subs[seriesId];
+      for (const subscriptionKey of Object.keys(subs)) {
+        const parsed = parseSubscriptionKey(subscriptionKey);
+        if (!parsed) continue;
+        const sub = subs[subscriptionKey];
         const status = computeStatus(sub.expireAt, expiringDays);
         if (Number(sub.planDays || 0) === 0) continue;
         let nextSub = { ...sub, status };
         if (status === 'expiring' && !sub.expiringNotifiedAtIso) {
-          const series = (store.series || []).find((s) => s.id === seriesId);
+          const seriesId = String(parsed.seriesId || '');
+          const series = (store.series || []).find((s) => String(s?.id || '') === seriesId);
+          const seasons = Array.isArray(series?.seasons) ? series.seasons : [];
+          const superVip = series?.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+          let displayTitle = String(series?.title || '');
+          if (parsed.targetType === 'season') {
+            const season = seasons.find((s) => String(s?.seasonId || '') === String(parsed.seasonId));
+            if (season?.title) displayTitle = `${displayTitle} ${String(season.title)}`.trim();
+          }
+          if (parsed.targetType === 'super') {
+            displayTitle = `${displayTitle} 全季`.trim();
+            if (superVip?.title) displayTitle = String(superVip.title || '').trim();
+          }
           const remainDays = Math.max(0, Math.ceil((new Date(sub.expireAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
           try {
             await bot.telegram.sendMessage(
               uid,
-              `⏰ 您的《${series?.title || ''}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
+              `⏰ 您的《${displayTitle}》订阅将在 ${remainDays} 天后到期。\n\n点击下方按钮续费：`,
               Markup.inlineKeyboard([[Markup.button.webApp('立即续费', await buildRenewUrl(seriesId))]])
             );
             nextSub = { ...nextSub, expiringNotifiedAtIso: dateNowIso() };
           } catch {}
         }
         if (status === 'expired' && !sub.expiredHandledAtIso) {
-          const series = (store.series || []).find((s) => s.id === seriesId);
-          if (series?.vipGroupId) {
+          const seriesId = String(parsed.seriesId || '');
+          const series = (store.series || []).find((s) => String(s?.id || '') === seriesId);
+          const seasons = Array.isArray(series?.seasons) ? series.seasons : [];
+          const superVip = series?.superVip && typeof series.superVip === 'object' ? series.superVip : {};
+          let displayTitle = String(series?.title || '');
+          let groupId = String(series?.vipGroupId || '');
+          if (parsed.targetType === 'season') {
+            const season = seasons.find((s) => String(s?.seasonId || '') === String(parsed.seasonId));
+            if (season?.title) displayTitle = `${displayTitle} ${String(season.title)}`.trim();
+            groupId = String(season?.vipGroupId || '');
+          }
+          if (parsed.targetType === 'super') {
+            displayTitle = `${displayTitle} 全季`.trim();
+            if (superVip?.title) displayTitle = String(superVip.title || '').trim();
+            groupId = String(superVip?.groupId || '');
+          }
+          if (groupId) {
             try {
-              await bot.telegram.kickChatMember(series.vipGroupId, uid);
+              await bot.telegram.kickChatMember(groupId, uid);
             } catch {}
           }
           try {
             await bot.telegram.sendMessage(
               uid,
-              `⏰ 您的《${(store.series || []).find((s) => s.id === seriesId)?.title || ''}》订阅已到期。请续费后继续观看。`,
+              `⏰ 您的《${displayTitle}》订阅已到期。请续费后继续观看。`,
               Markup.inlineKeyboard([[Markup.button.webApp('立即续费', await buildRenewUrl(seriesId))]])
             );
           } catch {}
           nextSub = { ...nextSub, expiredHandledAtIso: dateNowIso() };
         }
-        subs[seriesId] = nextSub;
+        subs[subscriptionKey] = nextSub;
       }
       users[uid] = { ...u, subscriptions: subs };
     }

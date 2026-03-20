@@ -607,16 +607,52 @@ const SystemSettings = () => {
                           <div className="text-xs text-slate-600 font-medium">
                             {it.trial?.ok ? `status=${it.trial.status || '-'} can_invite_users=${String(Boolean(it.trial.can_invite_users))} public=${String(Boolean(it.trial?.chat?.username))}` : `error=${it.trial?.error || 'unknown'}`}
                           </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-slate-500 font-semibold">VIP群</div>
-                            <div className="font-mono text-xs text-slate-900">{it.vipGroupId || '-'}</div>
+                          <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200">
+                            <div className="text-slate-500 font-semibold">土豪群</div>
+                            <div className="font-mono text-xs text-slate-900">{it.superVip?.groupId || '-'}</div>
                           </div>
                           <div className="text-xs text-slate-600 font-medium">
-                            {it.vip?.ok ? `status=${it.vip.status || '-'} can_manage_chat=${String(Boolean(it.vip.can_manage_chat))} public=${String(Boolean(it.vip?.chat?.username))}` : `error=${it.vip?.error || 'unknown'}`}
+                            {it.superVip?.enabled
+                              ? (it.superVip?.check?.ok
+                                  ? `status=${it.superVip.check.status || '-'} can_manage_chat=${String(Boolean(it.superVip.check.can_manage_chat))} public=${String(Boolean(it.superVip?.check?.chat?.username))}`
+                                  : `error=${it.superVip?.check?.error || 'unknown'}`)
+                              : '未启用'}
                           </div>
-                          {it.vip?.ok && it.vip?.chat?.username ? (
+                          {it.superVip?.enabled && it.superVip?.check?.ok && it.superVip?.check?.chat?.username ? (
                             <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 font-medium leading-relaxed">
-                              VIP群为公开群（存在 username），用户可绕过申请直接加入。若需严格控制，请将 VIP 群改为私密或关闭公开加入入口。
+                              土豪群为公开群（存在 username），用户可绕过申请直接加入。若需严格控制，请将群改为私密或关闭公开加入入口。
+                            </div>
+                          ) : null}
+                          {(it.seasons || []).length > 0 ? (
+                            <div className="pt-2 border-t border-slate-200 space-y-2">
+                              <div className="text-slate-500 font-semibold">分季VIP群</div>
+                              <div className="space-y-2">
+                                {(it.seasons || []).map((ss) => (
+                                  <div key={ss.seasonId} className="rounded-lg bg-white border border-slate-200 p-2">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="font-semibold text-slate-800">{ss.title || ss.seasonId}</div>
+                                      <div className="font-mono text-xs text-slate-600">{ss.vipGroupId || '-'}</div>
+                                    </div>
+                                    <div className="text-xs text-slate-600 font-medium mt-1">
+                                      {ss.check?.ok ? `status=${ss.check.status || '-'} can_manage_chat=${String(Boolean(ss.check.can_manage_chat))} public=${String(Boolean(ss.check?.chat?.username))}` : `error=${ss.check?.error || 'unknown'}`}
+                                    </div>
+                                    {ss.check?.ok && ss.check?.chat?.username ? (
+                                      <div className="rounded-xl bg-amber-50 border border-amber-200 p-2 mt-2 text-[11px] text-amber-700 font-medium leading-relaxed">
+                                        分季VIP群为公开群（存在 username），用户可绕过申请直接加入。若需严格控制，请将群改为私密或关闭公开加入入口。
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {it.legacyVipGroupId ? (
+                            <div className="pt-2 border-t border-slate-200 space-y-1">
+                              <div className="text-slate-500 font-semibold">旧版VIP群（兼容）</div>
+                              <div className="font-mono text-xs text-slate-900">{it.legacyVipGroupId}</div>
+                              <div className="text-xs text-slate-600 font-medium">
+                                {it.legacyVip?.ok ? `status=${it.legacyVip.status || '-'} public=${String(Boolean(it.legacyVip?.chat?.username))}` : `error=${it.legacyVip?.error || 'unknown'}`}
+                              </div>
                             </div>
                           ) : null}
                         </div>

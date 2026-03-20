@@ -47,8 +47,8 @@ const MySubscriptionsPage = ({ onNavigate, onRenew }) => {
     window.open(link, '_blank');
   };
 
-  const requestVipInviteLink = async (seriesId) => {
-    const data = await apiFetchJson('/api/vip/invite-link', { method: 'POST', body: JSON.stringify({ series_id: seriesId }) });
+  const requestVipInviteLink = async (seriesId, targetType, seasonId) => {
+    const data = await apiFetchJson('/api/vip/invite-link', { method: 'POST', body: JSON.stringify({ series_id: seriesId, target_type: targetType, season_id: seasonId }) });
     if (!data?.invite_link) throw new Error('未获取到入群链接');
     return data.invite_link;
   };
@@ -59,7 +59,7 @@ const MySubscriptionsPage = ({ onNavigate, onRenew }) => {
     if (joiningId) return;
     try {
       setJoiningId(sub.id);
-      const link = await requestVipInviteLink(sub.seriesId);
+      const link = await requestVipInviteLink(sub.seriesId, sub.targetType, sub.seasonId);
       openGroup(link);
     } catch (e) {
       alert(e?.message || '获取入群链接失败');
