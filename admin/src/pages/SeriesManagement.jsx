@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetchJson, getApiBaseUrl } from '../utils/api';
 
-const SeriesManagement = () => {
+const SeriesManagement = ({ onAlert }) => {
   const [view, setView] = useState('list'); // 'list' or 'edit'
   const [editingSeries, setEditingSeries] = useState(null);
   const [draft, setDraft] = useState(null);
@@ -172,17 +172,6 @@ const SeriesManagement = () => {
     return blob;
   };
 
-  const uploadCover = async (file) => {
-    const blob = await imageFileToCoverBlob(file);
-    const fd = new FormData();
-    fd.append('file', blob, 'cover.webp');
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/admin/upload/cover`, { method: 'POST', body: fd });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.success || !data?.url) throw new Error(data?.message || `上传失败: ${res.status}`);
-    return `${baseUrl}${data.url}`;
-  };
-
   const blobToDataUrl = async (blob) => {
     const dataUrl = await new Promise((resolve, reject) => {
       const r = new FileReader();
@@ -191,6 +180,11 @@ const SeriesManagement = () => {
       r.readAsDataURL(blob);
     });
     return dataUrl;
+  };
+
+  const imageFileToCoverDataUrl = async (file) => {
+    const blob = await imageFileToCoverBlob(file);
+    return blobToDataUrl(blob);
   };
 
   const imageFileToSeasonCoverDataUrl = async (file) => {
@@ -252,10 +246,10 @@ const SeriesManagement = () => {
     if (!file) return;
     try {
       setIsUploadingCover(true);
-      const url = await uploadCover(file);
+      const url = await imageFileToCoverDataUrl(file);
       setDraft((d) => ({ ...(d || {}), cover: url }));
     } catch (e) {
-      alert(e?.message || '封面上传失败');
+      onAlert?.('error', e?.message || '封面上传失败');
     } finally {
       setIsUploadingCover(false);
       if (coverInputRef.current) coverInputRef.current.value = '';
@@ -275,7 +269,7 @@ const SeriesManagement = () => {
         return { ...(d || {}), seasons };
       });
     } catch (e) {
-      alert(e?.message || '剧照上传失败');
+      onAlert?.('error', e?.message || '剧照上传失败');
     } finally {
       setIsUploadingSeasonCover(false);
       setSeasonCoverPickIndex(-1);
@@ -408,7 +402,7 @@ const SeriesManagement = () => {
                       await apiFetchJson(`/api/admin/series/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
                       refresh();
                     } catch (e) {
-                      alert(e?.message || '删除失败');
+                      onAlert?.('error', e?.message || '删除失败');
                     }
                   }}
                   className="h-9 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-sm transition-colors"
@@ -1044,7 +1038,10 @@ const SeriesManagement = () => {
           <button
             onClick={async () => {
               try {
-                if (!draft?.title) return alert('请填写剧名');
+                if (!draft?.title) {
+                  onAlert?.('warning', '请填写剧名');
+                  return;
+                }
                 if (editingSeries?.id) {
                   await apiFetchJson(`/api/admin/series/${encodeURIComponent(editingSeries.id)}`, {
                     method: 'PUT',
@@ -1059,7 +1056,7 @@ const SeriesManagement = () => {
                 setView('list');
                 refresh();
               } catch (e) {
-                alert(e?.message || '保存失败');
+                onAlert?.('error', e?.message || '保存失败');
               }
             }}
             className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors"

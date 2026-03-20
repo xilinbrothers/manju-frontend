@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
 import { getApiBaseUrl } from '../utils/api';
 
-const PaymentConfig = () => {
+const PaymentConfig = ({ onAlert }) => {
   const [draft, setDraft] = useState({
     alipay: { merchantNo: '', merchantKey: '', apiUrl: '', productId: '' },
   });
@@ -33,7 +33,7 @@ const PaymentConfig = () => {
     try {
       setError('');
       await apiFetchJson('/api/admin/payment', { method: 'POST', body: JSON.stringify(draft) });
-      alert('已保存');
+      onAlert?.('success', '已保存');
       refresh();
     } catch (e) {
       setError(e?.message || '保存失败');

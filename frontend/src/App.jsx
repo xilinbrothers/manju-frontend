@@ -5,6 +5,7 @@ import PlansPage from './pages/PlansPage';
 import MySubscriptionsPage from './pages/MySubscriptionsPage';
 import PayRedirectPage from './pages/PayRedirectPage';
 import SeasonSelectPage from './pages/SeasonSelectPage';
+import AlertBar from './components/AlertBar';
 // AdminApp 不需要在 App.jsx 中导入，因为它在 main.jsx 中通过路由直接使用
 import { getTranslation } from './utils/i18n';
 import { apiFetchJson, getApiBaseUrl } from './utils/api';
@@ -19,6 +20,11 @@ const App = () => {
   const [payOrderId, setPayOrderId] = useState('');
   const [quote, setQuote] = useState(null);
   const [quoteError, setQuoteError] = useState('');
+  const [appAlert, setAppAlert] = useState(null);
+
+  const showAlert = (type, message) => {
+    setAppAlert({ type, message: String(message || '') });
+  };
 
   // 多语言支持
   const lang = useMemo(() => {
@@ -67,11 +73,11 @@ const App = () => {
 
   const startPayment = async (paymentMethod) => {
     if (!selectedSeries?.id || !selectedPlan?.id) {
-      alert('请选择剧集和套餐');
+      showAlert('warning', '请选择剧集和套餐');
       return;
     }
     if (paymentMethod === 'stars') {
-      alert('Telegram Stars 支付已下线');
+      showAlert('warning', 'Telegram Stars 支付已下线');
       return;
     }
     try {
@@ -102,9 +108,9 @@ const App = () => {
         return;
       }
 
-      alert('未获取到支付信息');
+      showAlert('error', '未获取到支付信息');
     } catch (e) {
-      alert(e?.message || '支付失败');
+      showAlert('error', e?.message || '支付失败');
     }
   };
 
@@ -228,6 +234,7 @@ const App = () => {
         return (
           <SeriesListPage 
             onNavigate={navigate} 
+            onAlert={showAlert}
             onSelectSeries={(s) => {
               setSelectedSeries(s);
               setSelectedPlan(null);
@@ -406,6 +413,7 @@ const App = () => {
         return (
           <MySubscriptionsPage
             onNavigate={navigate}
+            onAlert={showAlert}
             onRenew={async (seriesId) => {
               if (!seriesId) return;
               try {
@@ -464,6 +472,11 @@ const App = () => {
     <div className="min-h-screen bg-[#0F172A] text-white">
       {/* 状态栏占位 */}
       <div className="h-6 w-full"></div>
+      {appAlert?.message ? (
+        <div className="px-5 pb-3">
+          <AlertBar type={appAlert.type} message={appAlert.message} onClose={() => setAppAlert(null)} />
+        </div>
+      ) : null}
       {/* 页面内容 */}
       <div className="pb-12">
         {renderPage()}

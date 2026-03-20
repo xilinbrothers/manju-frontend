@@ -9,6 +9,7 @@ import CopywritingConfig from './pages/CopywritingConfig';
 import AdminManagement from './pages/AdminManagement';
 import FinanceCenter from './pages/FinanceCenter';
 import SystemSettings from './pages/SystemSettings';
+import AlertBar from './components/AlertBar';
 // import AdminLogin from './pages/AdminLogin';
 // import { GoogleOAuthProvider } from '@react-oauth/google';
 
@@ -16,6 +17,7 @@ import SystemSettings from './pages/SystemSettings';
 
 const AdminApp = () => {
   const [activeMenu, setActiveMenu] = useState('overview');
+  const [appAlert, setAppAlert] = useState(null);
   // 临时绕过登录，直接进入后台
   const [user, setUser] = useState({
     name: 'Admin',
@@ -30,7 +32,7 @@ const AdminApp = () => {
   const handleLogout = () => {
     // setUser(null);
     // setActiveMenu('overview');
-    alert("当前为开发模式，已禁用退出功能");
+    setAppAlert({ type: 'warning', message: '当前为开发模式，已禁用退出功能' });
   };
 
   /*
@@ -60,19 +62,19 @@ const AdminApp = () => {
       case 'overview':
         return <Dashboard />;
       case 'series':
-        return <SeriesManagement />;
+        return <SeriesManagement onAlert={(type, message) => setAppAlert({ type, message })} />;
       case 'plans':
-        return <PlansPricing />;
+        return <PlansPricing onAlert={(type, message) => setAppAlert({ type, message })} />;
       case 'users':
         return <UserSubscription />;
       case 'finance':
         return <FinanceCenter />;
       case 'payment':
-        return <PaymentConfig />;
+        return <PaymentConfig onAlert={(type, message) => setAppAlert({ type, message })} />;
       case 'copywriting':
         return <CopywritingConfig />;
       case 'settings':
-        return <SystemSettings />;
+        return <SystemSettings onAlert={(type, message) => setAppAlert({ type, message })} />;
       case 'admins':
         return <AdminManagement />;
       default:
@@ -82,6 +84,11 @@ const AdminApp = () => {
 
   return (
     <AdminLayout activeMenu={activeMenu} onMenuChange={setActiveMenu} user={user} onLogout={handleLogout}>
+      {appAlert?.message ? (
+        <div className="mb-6">
+          <AlertBar type={appAlert.type} message={appAlert.message} onClose={() => setAppAlert(null)} />
+        </div>
+      ) : null}
       {renderContent()}
     </AdminLayout>
   );

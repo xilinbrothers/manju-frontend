@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
 
-const MySubscriptionsPage = ({ onNavigate, onRenew }) => {
+const MySubscriptionsPage = ({ onNavigate, onRenew, onAlert }) => {
   const [activeSubs, setActiveSubs] = useState([]);
   const [expiredSubs, setExpiredSubs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -62,7 +62,7 @@ const MySubscriptionsPage = ({ onNavigate, onRenew }) => {
       const link = await requestVipInviteLink(sub.seriesId, sub.targetType, sub.seasonId);
       openGroup(link);
     } catch (e) {
-      alert(e?.message || '获取入群链接失败');
+      onAlert?.('error', e?.message || '获取入群链接失败');
     } finally {
       setJoiningId('');
     }

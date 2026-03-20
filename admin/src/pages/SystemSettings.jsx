@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
 
-const SystemSettings = () => {
+const SystemSettings = ({ onAlert }) => {
   const [draft, setDraft] = useState({
     expiringDays: 7,
     schedulerEnabled: true,
@@ -141,16 +141,19 @@ const SystemSettings = () => {
   const applyMenuOverride = async () => {
     const text = String(menuDraft.text || '').trim();
     const url = String(menuDraft.url || '').trim();
-    if (!text || !url) return alert('请填写文案与URL');
+    if (!text || !url) {
+      onAlert?.('warning', '请填写文案与URL');
+      return;
+    }
     const ok = window.confirm('将通过后端覆盖 Telegram Menu Button 为 WebApp。确认继续？');
     if (!ok) return;
     try {
       await apiFetchJson('/api/admin/telegram/menu-button', { method: 'POST', body: JSON.stringify({ action: 'override_web_app', text, url }) });
       await refreshMenuButton();
       await refreshOverrides();
-      alert('已覆盖');
+      onAlert?.('success', '已覆盖');
     } catch (e) {
-      alert(e?.message || '操作失败');
+      onAlert?.('error', e?.message || '操作失败');
     }
   };
 
@@ -161,9 +164,9 @@ const SystemSettings = () => {
       await apiFetchJson('/api/admin/telegram/menu-button', { method: 'POST', body: JSON.stringify({ action: 'clear_override' }) });
       await refreshMenuButton();
       await refreshOverrides();
-      alert('已清除覆盖标记');
+      onAlert?.('success', '已清除覆盖标记');
     } catch (e) {
-      alert(e?.message || '操作失败');
+      onAlert?.('error', e?.message || '操作失败');
     }
   };
 
@@ -174,7 +177,8 @@ const SystemSettings = () => {
       if (!Array.isArray(parsed)) throw new Error('格式必须是JSON数组');
       list = parsed;
     } catch (e) {
-      return alert(e?.message || 'JSON解析失败');
+      onAlert?.('error', e?.message || 'JSON解析失败');
+      return;
     }
     const ok = window.confirm('将通过后端覆盖 Telegram 命令列表（default scope）。确认继续？');
     if (!ok) return;
@@ -182,9 +186,9 @@ const SystemSettings = () => {
       await apiFetchJson('/api/admin/telegram/commands', { method: 'POST', body: JSON.stringify({ action: 'override_set', commands: list }) });
       await refreshCommands();
       await refreshOverrides();
-      alert('已覆盖');
+      onAlert?.('success', '已覆盖');
     } catch (e) {
-      alert(e?.message || '操作失败');
+      onAlert?.('error', e?.message || '操作失败');
     }
   };
 
@@ -195,9 +199,9 @@ const SystemSettings = () => {
       await apiFetchJson('/api/admin/telegram/commands', { method: 'POST', body: JSON.stringify({ action: 'clear_override' }) });
       await refreshCommands();
       await refreshOverrides();
-      alert('已清除覆盖标记');
+      onAlert?.('success', '已清除覆盖标记');
     } catch (e) {
-      alert(e?.message || '操作失败');
+      onAlert?.('error', e?.message || '操作失败');
     }
   };
 
@@ -208,9 +212,9 @@ const SystemSettings = () => {
       await apiFetchJson('/api/admin/telegram/webhook', { method: 'POST', body: JSON.stringify({ action: 'delete', drop_pending_updates: true }) });
       await refreshWebhook();
       await refreshOverrides();
-      alert('已删除Webhook');
+      onAlert?.('success', '已删除Webhook');
     } catch (e) {
-      alert(e?.message || '操作失败');
+      onAlert?.('error', e?.message || '操作失败');
     }
   };
 
@@ -218,7 +222,7 @@ const SystemSettings = () => {
     try {
       setError('');
       await apiFetchJson('/api/admin/settings', { method: 'POST', body: JSON.stringify(draft) });
-      alert('已保存');
+      onAlert?.('success', '已保存');
       refresh();
     } catch (e) {
       setError(e?.message || '保存失败');
@@ -675,9 +679,9 @@ const SystemSettings = () => {
                 onClick={async () => {
                   try {
                     await apiFetchJson('/api/admin/stats/daily/recompute', { method: 'POST', body: JSON.stringify({}) });
-                    alert('已触发今日统计重算');
+                    onAlert?.('success', '已触发今日统计重算');
                   } catch (e) {
-                    alert(e?.message || '操作失败');
+                    onAlert?.('error', e?.message || '操作失败');
                   }
                 }}
                 className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold transition-colors"

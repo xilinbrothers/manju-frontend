@@ -74,6 +74,22 @@ const PlansPage = ({ series, targetType, seasonId, displayTitle, onSelectPlan, o
         </div>
       </div>
 
+      <h4 className="text-[15px] font-bold mb-5 px-1">选择支付方式</h4>
+      <div className="mb-8">
+        <button
+          disabled
+          className="w-full p-5 rounded-3xl flex items-center border bg-[#1A2333] border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500"
+        >
+          <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 border-blue-500 bg-blue-500">
+            <div className="w-2.5 h-2.5 bg-white rounded-full"></div>
+          </div>
+          <div className="flex-1 text-left">
+            <div className="text-[16px] font-bold mb-0.5">支付宝（Alipay）</div>
+            <div className="text-[11px] text-gray-500 font-medium">默认支付方式</div>
+          </div>
+        </button>
+      </div>
+
       <h4 className="text-[15px] font-bold mb-5 px-1">选择订阅时长</h4>
 
       {/* Plans List */}

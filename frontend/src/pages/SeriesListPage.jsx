@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import SeriesCard from '../components/SeriesCard';
 import { apiFetchJson } from '../utils/api';
 
-const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
+const SeriesListPage = ({ onNavigate, onSelectSeries, onAlert }) => {
   const [series, setSeries] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -77,7 +77,7 @@ const SeriesListPage = ({ onNavigate, onSelectSeries }) => {
                         window.open(link, '_blank');
                       }
                     } catch (e) {
-                      alert(e?.message || '进入试看群失败');
+                      onAlert?.('error', e?.message || '进入试看群失败');
                     }
                   }}
                   onSubscribe={() => {

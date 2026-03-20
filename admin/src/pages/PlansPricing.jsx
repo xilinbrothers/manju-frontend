@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetchJson } from '../utils/api';
 
-const PlansPricing = () => {
+const PlansPricing = ({ onAlert }) => {
   const [plans, setPlans] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -32,11 +32,11 @@ const PlansPricing = () => {
         method: 'POST',
         body: JSON.stringify({ plans })
       });
-      alert('保存成功！');
+      onAlert?.('success', '保存成功');
       await loadData();
     } catch (e) {
       setError(e?.message || '保存失败');
-      alert(e?.message || '保存失败');
+      onAlert?.('error', e?.message || '保存失败');
     } finally {
       setIsSaving(false);
     }
