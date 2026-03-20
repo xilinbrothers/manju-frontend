@@ -508,7 +508,28 @@ app.post('/api/admin/series/:id/seasons/:seasonId/cover', upload.single('file'),
       const prev = await Series.findOne({ id }).lean();
       if (!prev) return res.status(404).json({ success: false, message: '剧集不存在' });
       const exists = Array.isArray(prev.seasons) && prev.seasons.some((s) => String(s?.seasonId || '') === seasonId);
-      if (!exists) return res.status(404).json({ success: false, message: '分季不存在' });
+      if (!exists) {
+        await Series.updateOne(
+          { id },
+          {
+            $push: {
+              seasons: {
+                seasonId,
+                enabled: false,
+                title: '',
+                introTitle: '',
+                introText: '',
+                vipGroupId: '',
+                sort: 0,
+                planOverride: false,
+                plans: [],
+                cover,
+              },
+            },
+          }
+        );
+        return res.json({ success: true, updatedAt: dateNowIso() });
+      }
       await Series.updateOne({ id, 'seasons.seasonId': seasonId }, { $set: { 'seasons.$.cover': cover } });
       return res.json({ success: true, updatedAt: dateNowIso() });
     }
@@ -519,13 +540,76 @@ app.post('/api/admin/series/:id/seasons/:seasonId/cover', upload.single('file'),
     const prev = store.series[idx] || {};
     const seasons = Array.isArray(prev.seasons) ? prev.seasons : [];
     const sidx = seasons.findIndex((s) => String(s?.seasonId || '') === seasonId);
-    if (sidx < 0) return res.status(404).json({ success: false, message: '分季不存在' });
+    if (sidx < 0) {
+      const nextSeasons = [...seasons, { seasonId, enabled: false, title: '', introTitle: '', introText: '', vipGroupId: '', sort: 0, planOverride: false, plans: [], cover }];
+      const nextSeries = [...(store.series || [])];
+      nextSeries[idx] = { ...prev, seasons: nextSeasons };
+      const next = saveStore({ ...store, series: nextSeries });
+      return res.json({ success: true, updatedAt: next.updatedAt });
+    }
     const nextSeasons = [...seasons];
     nextSeasons[sidx] = { ...(nextSeasons[sidx] || {}), cover };
     const nextSeries = [...(store.series || [])];
     nextSeries[idx] = { ...prev, seasons: nextSeasons };
     const next = saveStore({ ...store, series: nextSeries });
     return res.json({ success: true, updatedAt: next.updatedAt });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.post('/api/admin/series/draft', (req, res) => {
+  (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
+    const body = req.body || {};
+    const id = String(body.id || '').trim() || `series_${Date.now()}`;
+    const title = String(body.title || '').trim() || '未命名剧集';
+    const nowIso = dateNowIso();
+
+    const draftItem = {
+      id,
+      title,
+      isDraft: true,
+      description: '',
+      cover: '',
+      status: '连载中',
+      total: 0,
+      category: '',
+      enabled: false,
+      trialGroupId: '',
+      vipGroupId: '',
+      planOverride: false,
+      plans: [],
+      seasons: [],
+      superVip: { enabled: false },
+      updatedAt: nowIso,
+      createdAt: nowIso,
+    };
+
+    if (mongoReady) {
+      const prev = await Series.findOne({ id }).lean();
+      if (!prev) {
+        const created = await Series.create(draftItem);
+        return res.json({ success: true, item: created.toObject(), updatedAt: nowIso });
+      }
+      await Series.updateOne(
+        { id },
+        { $set: { title, isDraft: prev.isDraft !== false, enabled: prev.enabled !== false ? prev.enabled : false } }
+      );
+      const updated = await Series.findOne({ id }).lean();
+      return res.json({ success: true, item: updated, updatedAt: nowIso });
+    }
+
+    const store = loadStore();
+    const list = Array.isArray(store.series) ? store.series : [];
+    const idx = list.findIndex((s) => String(s?.id || '') === id);
+    if (idx < 0) {
+      const next = saveStore({ ...store, series: [...list, draftItem] });
+      return res.json({ success: true, item: draftItem, updatedAt: next.updatedAt });
+    }
+    const prev = list[idx] || {};
+    const nextSeries = [...list];
+    nextSeries[idx] = { ...prev, title: title || prev.title, isDraft: prev.isDraft !== false, enabled: prev.enabled !== false ? prev.enabled : false };
+    const next = saveStore({ ...store, series: nextSeries });
+    return res.json({ success: true, item: nextSeries[idx], updatedAt: next.updatedAt });
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
 
@@ -774,6 +858,7 @@ app.post('/api/admin/series', (req, res) => {
     const item = {
       id,
       title: body.title || '未命名剧集',
+      isDraft: false,
       description: body.description || '',
       cover: body.cover || '',
       status: body.status || '连载中',
@@ -816,6 +901,7 @@ app.put('/api/admin/series/:id', (req, res) => {
       const nextItem = {
         ...prev,
         title: body.title !== undefined ? body.title : prev.title,
+        isDraft: false,
         description: body.description !== undefined ? body.description : prev.description,
         cover: body.cover !== undefined ? body.cover : prev.cover,
         status: body.status !== undefined ? body.status : prev.status,
@@ -841,6 +927,7 @@ app.put('/api/admin/series/:id', (req, res) => {
     const nextItem = {
       ...prev,
       title: body.title !== undefined ? body.title : prev.title,
+      isDraft: false,
       description: body.description !== undefined ? body.description : prev.description,
       cover: body.cover !== undefined ? body.cover : prev.cover,
       status: body.status !== undefined ? body.status : prev.status,

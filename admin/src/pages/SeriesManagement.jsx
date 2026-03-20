@@ -115,6 +115,16 @@ const SeriesManagement = ({ onAlert }) => {
     return s;
   };
 
+  const ensureDraftSeries = async () => {
+    const id = String(draft?.id || '').trim();
+    if (!id) throw new Error('缺少剧集ID');
+    const title = String(draft?.title || '').trim() || '未命名剧集';
+    const resp = await apiFetchJson('/api/admin/series/draft', { method: 'POST', body: JSON.stringify({ id, title }) });
+    if (!resp?.success || !resp?.item?.id) throw new Error(resp?.message || '创建草稿失败');
+    setEditingSeries({ id: resp.item.id, raw: resp.item });
+    return resp.item;
+  };
+
   const buildDefaultId = () => `series_${Date.now()}`;
 
   const imageFileToCoverBlob = async (file) => {
@@ -318,6 +328,9 @@ const SeriesManagement = ({ onAlert }) => {
       const url = await blobToDataUrl(blob);
       if (editingSeries?.id) {
         await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(editingSeries.id)}/cover`, blob);
+      } else {
+        const created = await ensureDraftSeries();
+        await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(created.id)}/cover`, blob);
       }
       setDraft((d) => ({ ...(d || {}), cover: url }));
     } catch (e) {
@@ -336,8 +349,12 @@ const SeriesManagement = ({ onAlert }) => {
       const blob = await imageFileToSeasonCoverBlob(file);
       const url = await blobToDataUrl(blob);
       const sid = String(draft?.seasons?.[seasonCoverPickIndex]?.seasonId || '').trim();
-      if (editingSeries?.id && sid) {
+      if (!sid) throw new Error('请先填写 seasonId 再上传剧照');
+      if (editingSeries?.id) {
         await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(editingSeries.id)}/seasons/${encodeURIComponent(sid)}/cover`, blob);
+      } else {
+        const created = await ensureDraftSeries();
+        await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(created.id)}/seasons/${encodeURIComponent(sid)}/cover`, blob);
       }
       setDraft((d) => {
         const seasons = [...((d?.seasons || []))];

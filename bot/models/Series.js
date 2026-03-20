@@ -36,6 +36,7 @@ const SeriesSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true, index: true },
     title: { type: String, required: true },
+    isDraft: { type: Boolean, default: false, index: true },
     description: { type: String, default: '' },
     cover: { type: String, default: '' },
     status: { type: String, default: '连载中' },
