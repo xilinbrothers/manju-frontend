@@ -61,6 +61,10 @@
 - `MEDIA_STORAGE=local`（默认）：写入 `bot/uploads/covers/` 并通过后端静态路由对外提供 `GET /uploads/covers/<filename>`
 - `MEDIA_STORAGE=s3`：上传到 S3/OSS/R2 兼容对象存储并返回公网 URL
 
+可选：
+
+- `MEDIA_CLEANUP=true`：封面替换时尝试清理旧文件（local 生效；s3 需要配合 `S3_DELETE_ENABLED=true`）
+
 ### 3.2 对象存储（S3/OSS/R2）配置
 
 当 `MEDIA_STORAGE=s3` 时，后端需要以下环境变量：
@@ -72,6 +76,7 @@
 - `S3_ENDPOINT`：可选，S3 兼容端点（R2/OSS/MinIO 通常需要）
 - `S3_REGION`：可选，默认 `auto`
 - `S3_PREFIX`：可选，上传路径前缀（不含前后 `/`）
+- `S3_DELETE_ENABLED`：可选，设为 `true` 后允许清理旧封面对象（需要对应的删除权限）
 
 ### 3.3 本地磁盘（local）生产环境要求
 
@@ -130,6 +135,8 @@ Invoke-RestMethod -Method Post -Uri "$BASE/api/admin/migrate/covers" `
 
 - `seriesCoverConverted`：转换了多少个剧集封面
 - `seasonCoverConverted`：转换了多少个分季封面
+- `seriesThumbConverted`：转换了多少个剧集缩略图
+- `seasonThumbConverted`：转换了多少个分季缩略图
 
 ### 5.3 迁移后验收
 
@@ -147,6 +154,7 @@ Invoke-RestMethod -Method Post -Uri "$BASE/api/admin/migrate/covers" `
 - `/api/admin/auth/me` 在未登录时返回 401（不应 200）
 - `/api/admin/settings` 未授权返回 401，授权后 200
 - 上传目录权限：`bot/uploads/` 可写
+- 存储健康检查：`GET /api/admin/health/storage` 返回 `success: true`
 
 ### 6.2 前端
 

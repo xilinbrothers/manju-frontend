@@ -186,6 +186,62 @@ const SeriesManagement = ({ onAlert }) => {
     return blob;
   };
 
+  const imageFileToCoverThumbBlob = async (file) => {
+    const ok = /image\/(png|jpeg|webp)/.test(file.type || '');
+    if (!ok) throw new Error('仅支持 JPG/PNG/WEBP 图片');
+    const img = await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const i = new Image();
+      i.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(i);
+      };
+      i.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('图片加载失败'));
+      };
+      i.src = url;
+    });
+
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
+    if (srcW < 320 || srcH < 180) throw new Error('图片分辨率过低，请至少 320×180');
+
+    const targetW = 320;
+    const targetH = 180;
+    const targetRatio = targetW / targetH;
+    const srcRatio = srcW / srcH;
+
+    let cropW = srcW;
+    let cropH = srcH;
+    if (srcRatio > targetRatio) {
+      cropW = Math.round(srcH * targetRatio);
+    } else {
+      cropH = Math.round(srcW / targetRatio);
+    }
+    const cropX = Math.round((srcW - cropW) / 2);
+    const cropY = Math.round((srcH - cropH) / 2);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
+
+    const maxBytes = 90 * 1024;
+    let q = 0.82;
+    let blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
+    while (blob && blob.size > maxBytes && q > 0.5) {
+      q = Math.max(0.5, q - 0.06);
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
+    }
+    if (!blob) throw new Error('图片处理失败');
+    if (blob.size > maxBytes) throw new Error('缩略图过大，请换更小的图片');
+    return blob;
+  };
+
   const blobToDataUrl = async (blob) => {
     const dataUrl = await new Promise((resolve, reject) => {
       const r = new FileReader();
@@ -254,6 +310,62 @@ const SeriesManagement = ({ onAlert }) => {
     }
     if (!blob) throw new Error('图片处理失败');
     if (blob.size > maxBytes) throw new Error('图片过大，请换更小的图片或减少分季数量后再保存');
+    return blob;
+  };
+
+  const imageFileToSeasonCoverThumbBlob = async (file) => {
+    const ok = /image\/(png|jpeg|webp)/.test(file.type || '');
+    if (!ok) throw new Error('仅支持 JPG/PNG/WEBP 图片');
+    const img = await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const i = new Image();
+      i.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(i);
+      };
+      i.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('图片加载失败'));
+      };
+      i.src = url;
+    });
+
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
+    if (srcW < 240 || srcH < 320) throw new Error('图片分辨率过低，请至少 240×320');
+
+    const targetW = 240;
+    const targetH = 320;
+    const targetRatio = targetW / targetH;
+    const srcRatio = srcW / srcH;
+
+    let cropW = srcW;
+    let cropH = srcH;
+    if (srcRatio > targetRatio) {
+      cropW = Math.round(srcH * targetRatio);
+    } else {
+      cropH = Math.round(srcW / targetRatio);
+    }
+    const cropX = Math.round((srcW - cropW) / 2);
+    const cropY = Math.round((srcH - cropH) / 2);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
+
+    const maxBytes = 120 * 1024;
+    let q = 0.82;
+    let blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
+    while (blob && blob.size > maxBytes && q > 0.5) {
+      q = Math.max(0.5, q - 0.06);
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', q));
+    }
+    if (!blob) throw new Error('图片处理失败');
+    if (blob.size > maxBytes) throw new Error('缩略图过大，请换更小的图片');
     return blob;
   };
 
@@ -340,15 +452,13 @@ const SeriesManagement = ({ onAlert }) => {
     try {
       setIsUploadingCover(true);
       const blob = await imageFileToCoverBlob(file);
+      const blobThumb = await imageFileToCoverThumbBlob(file);
       const previewUrl = await blobToDataUrl(blob);
-      let remoteUrl = '';
-      if (editingSeries?.id) {
-        remoteUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(editingSeries.id)}/cover`, blob);
-      } else {
-        const created = await ensureDraftSeries();
-        remoteUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(created.id)}/cover`, blob);
-      }
-      setDraft((d) => ({ ...(d || {}), cover: remoteUrl || previewUrl }));
+      const previewThumbUrl = await blobToDataUrl(blobThumb);
+      const seriesId = editingSeries?.id ? String(editingSeries.id) : String((await ensureDraftSeries()).id);
+      const remoteUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(seriesId)}/cover`, blob);
+      const remoteThumbUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(seriesId)}/cover_thumb`, blobThumb);
+      setDraft((d) => ({ ...(d || {}), cover: remoteUrl || previewUrl, coverThumb: remoteThumbUrl || previewThumbUrl }));
     } catch (e) {
       onAlert?.('error', e?.message || '封面上传失败');
     } finally {
@@ -363,20 +473,20 @@ const SeriesManagement = ({ onAlert }) => {
     try {
       setIsUploadingSeasonCover(true);
       const blob = await imageFileToSeasonCoverBlob(file);
+      const blobThumb = await imageFileToSeasonCoverThumbBlob(file);
       const previewUrl = await blobToDataUrl(blob);
+      const previewThumbUrl = await blobToDataUrl(blobThumb);
       let remoteUrl = '';
+      let remoteThumbUrl = '';
       const sid = String(draft?.seasons?.[seasonCoverPickIndex]?.seasonId || '').trim();
       if (!sid) throw new Error('请先填写 seasonId 再上传剧照');
-      if (editingSeries?.id) {
-        remoteUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(editingSeries.id)}/seasons/${encodeURIComponent(sid)}/cover`, blob);
-      } else {
-        const created = await ensureDraftSeries();
-        remoteUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(created.id)}/seasons/${encodeURIComponent(sid)}/cover`, blob);
-      }
+      const seriesId = editingSeries?.id ? String(editingSeries.id) : String((await ensureDraftSeries()).id);
+      remoteUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(seriesId)}/seasons/${encodeURIComponent(sid)}/cover`, blob);
+      remoteThumbUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(seriesId)}/seasons/${encodeURIComponent(sid)}/cover_thumb`, blobThumb);
       setDraft((d) => {
         const seasons = [...((d?.seasons || []))];
         if (!seasons[seasonCoverPickIndex]) return d;
-        seasons[seasonCoverPickIndex] = { ...seasons[seasonCoverPickIndex], cover: remoteUrl || previewUrl };
+        seasons[seasonCoverPickIndex] = { ...seasons[seasonCoverPickIndex], cover: remoteUrl || previewUrl, coverThumb: remoteThumbUrl || previewThumbUrl };
         return { ...(d || {}), seasons };
       });
     } catch (e) {

@@ -12,7 +12,7 @@ const SeriesCard = ({ series, onSubscribe, onPreview }) => {
           {/* 剧照 */}
           <div className="relative flex-shrink-0 aspect-video w-full sm:w-32 rounded-[var(--app-radius-md)] overflow-hidden bg-black/10">
             <img 
-              src={resolveApiUrl(series.cover) || 'https://via.placeholder.com/200x300'} 
+              src={resolveApiUrl(series.coverThumb || series.cover) || 'https://via.placeholder.com/200x300'} 
               alt={series.title}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />

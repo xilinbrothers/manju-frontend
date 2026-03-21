@@ -17,7 +17,16 @@ const User = require('./models/User');
 const Order = require('./models/Order');
 const Payment = require('./models/Payment');
 const DailyStat = require('./models/DailyStat');
-const { getUploadsDir, getStorageMode, saveImageBuffer, normalizeCoverValueForStorage } = require('./mediaStorage');
+const AdminAudit = require('./models/AdminAudit');
+const {
+  getUploadsDir,
+  getStorageMode,
+  getS3Config,
+  checkS3Bucket,
+  maybeDeleteByUrl,
+  saveImageBuffer,
+  normalizeCoverValueForStorage,
+} = require('./mediaStorage');
 
 // 检查必要的环境变量
 if (!process.env.BOT_TOKEN) {
@@ -200,6 +209,9 @@ app.use((err, req, res, next) => {
   if (err && err.type === 'entity.too.large') {
     return res.status(413).json({ success: false, message: 'Payload Too Large：图片过大或分季过多，请压缩图片或减少一次保存的分季数量' });
   }
+  if (err && String(err.message || '') === 'CORS blocked') {
+    return res.status(403).json({ success: false, message: 'CORS blocked：请配置 CORS_ORIGINS 放行当前来源' });
+  }
   return next(err);
 });
 
@@ -212,6 +224,43 @@ if (getStorageMode() === 'local') {
 }
 
 const dateNowIso = () => new Date().toISOString();
+
+const appendAdminAudit = async (req, action, target, meta, overrideAdmin) => {
+  try {
+    const nowIso = dateNowIso();
+    const a = overrideAdmin || req?.admin || {};
+    const ip = String(req?.headers?.['x-forwarded-for'] || '')
+      .split(',')[0]
+      .trim() || String(req?.ip || '');
+    const userAgent = String(req?.headers?.['user-agent'] || '');
+    const entry = {
+      atIso: nowIso,
+      adminType: String(a?.typ || ''),
+      adminEmail: String(a?.email || ''),
+      adminName: String(a?.name || ''),
+      ip,
+      userAgent,
+      action: String(action || ''),
+      target: String(target || ''),
+      meta: meta && typeof meta === 'object' ? meta : null,
+    };
+
+    if (mongoReady) {
+      await AdminAudit.create(entry);
+      return entry;
+    }
+
+    const dir = path.join(__dirname, 'data');
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch {}
+    const filePath = path.join(dir, 'admin_audit.log');
+    fs.appendFileSync(filePath, `${JSON.stringify(entry)}\n`);
+    return entry;
+  } catch {
+    return null;
+  }
+};
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -299,6 +348,13 @@ app.post('/api/admin/auth/google', (req, res) => {
       jwtSecret,
       { expiresIn: '7d' }
     );
+    await appendAdminAudit(
+      req,
+      'admin_login_google',
+      email,
+      { emailVerified: true },
+      { typ: 'google', email, name: payload?.name || '', picture: payload?.picture || '' }
+    );
     return res.json({
       success: true,
       token,
@@ -312,21 +368,80 @@ app.get('/api/admin/auth/me', adminAuth, (req, res) => {
   return res.json({ success: true, admin: req.admin || null, updatedAt: dateNowIso() });
 });
 
+app.get('/api/admin/health/storage', async (req, res) => {
+  try {
+    const mode = getStorageMode();
+    const s3 = getS3Config();
+    let uploadsWritable = null;
+    if (mode === 'local') {
+      try {
+        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        fs.accessSync(UPLOADS_DIR, fs.constants.W_OK);
+        uploadsWritable = true;
+      } catch {
+        uploadsWritable = false;
+      }
+    }
+    const s3BucketCheck = mode === 's3' ? await checkS3Bucket() : { ok: true, skipped: true };
+    return res.json({
+      success: true,
+      storage: {
+        mode,
+        local: { enabled: mode === 'local', uploadsDir: UPLOADS_DIR, uploadsWritable },
+        s3: {
+          enabled: mode === 's3',
+          bucket: s3.bucket || '',
+          publicBaseUrl: s3.publicBaseUrl || '',
+          endpoint: s3.endpoint || '',
+          region: s3.region || '',
+          keyPrefix: s3.keyPrefix || '',
+          hasCredentials: Boolean(s3.hasCredentials),
+          deleteEnabled: String(process.env.S3_DELETE_ENABLED || '').trim().toLowerCase() === 'true',
+          bucketCheck: s3BucketCheck,
+        },
+      },
+      updatedAt: dateNowIso(),
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e?.message || 'server_error' });
+  }
+});
+
+app.get('/api/admin/audit', async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(200, Number(req.query?.limit || 50) || 50));
+    if (mongoReady) {
+      const items = await AdminAudit.find({}).sort({ createdAt: -1 }).limit(limit).lean();
+      return res.json({ success: true, items, updatedAt: dateNowIso() });
+    }
+    const filePath = path.join(__dirname, 'data', 'admin_audit.log');
+    if (!fs.existsSync(filePath)) return res.json({ success: true, items: [], updatedAt: dateNowIso() });
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    const picked = lines.slice(Math.max(0, lines.length - limit));
+    const items = picked
+      .map((s) => {
+        try {
+          return JSON.parse(s);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .reverse();
+    return res.json({ success: true, items, updatedAt: dateNowIso() });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e?.message || 'server_error' });
+  }
+});
+
 app.post('/api/admin/upload/cover', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
     if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
-    const okTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
-    if (!okTypes.has(file.mimetype)) return res.status(400).json({ success: false, message: '仅支持 JPG/PNG/WEBP' });
-
-    const coverDir = path.join(UPLOADS_DIR, 'covers');
-    fs.mkdirSync(coverDir, { recursive: true });
-    const ext = file.mimetype === 'image/png' ? 'png' : file.mimetype === 'image/webp' ? 'webp' : 'jpg';
-    const name = `cover_${Date.now()}_${crypto.randomBytes(6).toString('hex')}.${ext}`;
-    const filePath = path.join(coverDir, name);
-    fs.writeFileSync(filePath, file.buffer);
-
-    res.json({ success: true, url: `/uploads/covers/${name}` });
+    const url = await saveImageBuffer(file.buffer, file.mimetype, 'upload_cover');
+    await appendAdminAudit(req, 'upload_cover', url, { mime: String(file.mimetype || ''), size: Number(file.size || 0) || 0 });
+    res.json({ success: true, url });
   } catch (e) {
     res.status(500).json({ success: false, message: e?.message || '上传失败' });
   }
@@ -442,7 +557,13 @@ const mergeSeasonsPreserveCover = (prevSeasons, nextSeasons) => {
     const sid = String(s.seasonId || '');
     const ps = prevMap.get(sid) || {};
     const cover = s.cover !== undefined ? s.cover : ps.cover;
-    merged.push({ ...ps, ...s, ...(cover !== undefined ? { cover } : {}) });
+    const coverThumb = s.coverThumb !== undefined ? s.coverThumb : ps.coverThumb;
+    merged.push({
+      ...ps,
+      ...s,
+      ...(cover !== undefined ? { cover } : {}),
+      ...(coverThumb !== undefined ? { coverThumb } : {}),
+    });
   }
   return merged;
 };
@@ -501,7 +622,7 @@ app.get('/api/series', (req, res) => {
   (async () => {
     if (mongoReady) {
       const list = await Series.find({ enabled: { $ne: false } })
-        .select('id title description cover status total category')
+        .select('id title description cover coverThumb status total category')
         .lean();
       return res.json(list.map((s) => ({ ...s, _id: undefined })));
     }
@@ -514,6 +635,7 @@ app.get('/api/series', (req, res) => {
         title: s.title,
         description: s.description,
         cover: s.cover,
+        coverThumb: s.coverThumb || '',
         status: s.status,
         total: s.total,
         category: s.category,
@@ -540,6 +662,7 @@ app.get('/api/series/:id', (req, res) => {
         seasonId: String(s.seasonId || ''),
         title: String(s.title || ''),
         cover: String(s.cover || ''),
+        coverThumb: String(s.coverThumb || ''),
         introTitle: String(s.introTitle || ''),
         introText: String(s.introText || ''),
         enabled: s.enabled !== false,
@@ -556,6 +679,7 @@ app.get('/api/series/:id', (req, res) => {
         title: series.title,
         description: series.description,
         cover: series.cover,
+        coverThumb: series.coverThumb || '',
         status: series.status,
         total: series.total,
         category: series.category,
@@ -586,20 +710,26 @@ app.post('/api/admin/series/:id/cover', upload.single('file'), (req, res) => {
     const file = req.file;
     if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
     const url = await saveImageBuffer(file.buffer, file.mimetype, `series_${id}_cover`);
+    const cleanupEnabled = String(process.env.MEDIA_CLEANUP || '').trim().toLowerCase() === 'true';
 
     if (mongoReady) {
       const prev = await Series.findOne({ id }).lean();
       if (!prev) return res.status(404).json({ success: false, message: '剧集不存在' });
       await Series.updateOne({ id }, { $set: { cover: url } });
+      await appendAdminAudit(req, 'series_cover_upload', id, { url });
+      if (cleanupEnabled && prev.cover && prev.cover !== url) await maybeDeleteByUrl(prev.cover);
       return res.json({ success: true, url, updatedAt: dateNowIso() });
     }
 
     const store = loadStore();
     const idx = (store.series || []).findIndex((s) => String(s?.id || '') === id);
     if (idx < 0) return res.status(404).json({ success: false, message: '剧集不存在' });
+    const prevUrl = String(store.series?.[idx]?.cover || '');
     const nextSeries = [...(store.series || [])];
     nextSeries[idx] = { ...(nextSeries[idx] || {}), cover: url };
     const next = saveStore({ ...store, series: nextSeries });
+    await appendAdminAudit(req, 'series_cover_upload', id, { url });
+    if (cleanupEnabled && prevUrl && prevUrl !== url) await maybeDeleteByUrl(prevUrl);
     return res.json({ success: true, url, updatedAt: next.updatedAt });
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
@@ -613,6 +743,7 @@ app.post('/api/admin/series/:id/seasons/:seasonId/cover', upload.single('file'),
     const file = req.file;
     if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
     const url = await saveImageBuffer(file.buffer, file.mimetype, `series_${id}_season_${seasonId}_cover`);
+    const cleanupEnabled = String(process.env.MEDIA_CLEANUP || '').trim().toLowerCase() === 'true';
 
     if (mongoReady) {
       const prev = await Series.findOne({ id }).lean();
@@ -638,9 +769,13 @@ app.post('/api/admin/series/:id/seasons/:seasonId/cover', upload.single('file'),
             },
           }
         );
+        await appendAdminAudit(req, 'season_cover_upload', `${id}:${seasonId}`, { url, created: true });
         return res.json({ success: true, url, updatedAt: dateNowIso() });
       }
+      const prevSeason = (prev.seasons || []).find((s) => String(s?.seasonId || '') === seasonId) || {};
       await Series.updateOne({ id, 'seasons.seasonId': seasonId }, { $set: { 'seasons.$.cover': url } });
+      await appendAdminAudit(req, 'season_cover_upload', `${id}:${seasonId}`, { url, created: false });
+      if (cleanupEnabled && prevSeason.cover && prevSeason.cover !== url) await maybeDeleteByUrl(prevSeason.cover);
       return res.json({ success: true, url, updatedAt: dateNowIso() });
     }
 
@@ -655,13 +790,121 @@ app.post('/api/admin/series/:id/seasons/:seasonId/cover', upload.single('file'),
       const nextSeries = [...(store.series || [])];
       nextSeries[idx] = { ...prev, seasons: nextSeasons };
       const next = saveStore({ ...store, series: nextSeries });
+      await appendAdminAudit(req, 'season_cover_upload', `${id}:${seasonId}`, { url, created: true });
       return res.json({ success: true, url, updatedAt: next.updatedAt });
     }
+    const prevUrl = String(seasons?.[sidx]?.cover || '');
     const nextSeasons = [...seasons];
     nextSeasons[sidx] = { ...(nextSeasons[sidx] || {}), cover: url };
     const nextSeries = [...(store.series || [])];
     nextSeries[idx] = { ...prev, seasons: nextSeasons };
     const next = saveStore({ ...store, series: nextSeries });
+    await appendAdminAudit(req, 'season_cover_upload', `${id}:${seasonId}`, { url, created: false });
+    if (cleanupEnabled && prevUrl && prevUrl !== url) await maybeDeleteByUrl(prevUrl);
+    return res.json({ success: true, url, updatedAt: next.updatedAt });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.post('/api/admin/series/:id/cover_thumb', upload.single('file'), (req, res) => {
+  (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ success: false, message: '参数缺失' });
+    const file = req.file;
+    if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
+    const url = await saveImageBuffer(file.buffer, file.mimetype, `series_${id}_cover_thumb`);
+    const cleanupEnabled = String(process.env.MEDIA_CLEANUP || '').trim().toLowerCase() === 'true';
+
+    if (mongoReady) {
+      const prev = await Series.findOne({ id }).lean();
+      if (!prev) return res.status(404).json({ success: false, message: '剧集不存在' });
+      await Series.updateOne({ id }, { $set: { coverThumb: url } });
+      await appendAdminAudit(req, 'series_cover_thumb_upload', id, { url });
+      if (cleanupEnabled && prev.coverThumb && prev.coverThumb !== url) await maybeDeleteByUrl(prev.coverThumb);
+      return res.json({ success: true, url, updatedAt: dateNowIso() });
+    }
+
+    const store = loadStore();
+    const idx = (store.series || []).findIndex((s) => String(s?.id || '') === id);
+    if (idx < 0) return res.status(404).json({ success: false, message: '剧集不存在' });
+    const prevUrl = String(store.series?.[idx]?.coverThumb || '');
+    const nextSeries = [...(store.series || [])];
+    nextSeries[idx] = { ...(nextSeries[idx] || {}), coverThumb: url };
+    const next = saveStore({ ...store, series: nextSeries });
+    await appendAdminAudit(req, 'series_cover_thumb_upload', id, { url });
+    if (cleanupEnabled && prevUrl && prevUrl !== url) await maybeDeleteByUrl(prevUrl);
+    return res.json({ success: true, url, updatedAt: next.updatedAt });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.post('/api/admin/series/:id/seasons/:seasonId/cover_thumb', upload.single('file'), (req, res) => {
+  (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
+    const id = String(req.params.id || '').trim();
+    const seasonId = String(req.params.seasonId || '').trim();
+    if (!id || !seasonId) return res.status(400).json({ success: false, message: '参数缺失' });
+    const file = req.file;
+    if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
+    const url = await saveImageBuffer(file.buffer, file.mimetype, `series_${id}_season_${seasonId}_thumb`);
+    const cleanupEnabled = String(process.env.MEDIA_CLEANUP || '').trim().toLowerCase() === 'true';
+
+    if (mongoReady) {
+      const prev = await Series.findOne({ id }).lean();
+      if (!prev) return res.status(404).json({ success: false, message: '剧集不存在' });
+      const exists = Array.isArray(prev.seasons) && prev.seasons.some((s) => String(s?.seasonId || '') === seasonId);
+      if (!exists) {
+        await Series.updateOne(
+          { id },
+          {
+            $push: {
+              seasons: {
+                seasonId,
+                enabled: false,
+                title: '',
+                introTitle: '',
+                introText: '',
+                vipGroupId: '',
+                sort: 0,
+                planOverride: false,
+                plans: [],
+                cover: '',
+                coverThumb: url,
+              },
+            },
+          }
+        );
+        await appendAdminAudit(req, 'season_cover_thumb_upload', `${id}:${seasonId}`, { url, created: true });
+        return res.json({ success: true, url, updatedAt: dateNowIso() });
+      }
+      const prevSeason = (prev.seasons || []).find((s) => String(s?.seasonId || '') === seasonId) || {};
+      await Series.updateOne({ id, 'seasons.seasonId': seasonId }, { $set: { 'seasons.$.coverThumb': url } });
+      await appendAdminAudit(req, 'season_cover_thumb_upload', `${id}:${seasonId}`, { url, created: false });
+      if (cleanupEnabled && prevSeason.coverThumb && prevSeason.coverThumb !== url) await maybeDeleteByUrl(prevSeason.coverThumb);
+      return res.json({ success: true, url, updatedAt: dateNowIso() });
+    }
+
+    const store = loadStore();
+    const idx = (store.series || []).findIndex((s) => String(s?.id || '') === id);
+    if (idx < 0) return res.status(404).json({ success: false, message: '剧集不存在' });
+    const prev = store.series[idx] || {};
+    const seasons = Array.isArray(prev.seasons) ? prev.seasons : [];
+    const sidx = seasons.findIndex((s) => String(s?.seasonId || '') === seasonId);
+    if (sidx < 0) {
+      const nextSeasons = [...seasons, { seasonId, enabled: false, title: '', introTitle: '', introText: '', vipGroupId: '', sort: 0, planOverride: false, plans: [], cover: '', coverThumb: url }];
+      const nextSeries = [...(store.series || [])];
+      nextSeries[idx] = { ...prev, seasons: nextSeasons };
+      const next = saveStore({ ...store, series: nextSeries });
+      await appendAdminAudit(req, 'season_cover_thumb_upload', `${id}:${seasonId}`, { url, created: true });
+      return res.json({ success: true, url, updatedAt: next.updatedAt });
+    }
+    const prevUrl = String(seasons?.[sidx]?.coverThumb || '');
+    const nextSeasons = [...seasons];
+    nextSeasons[sidx] = { ...(nextSeasons[sidx] || {}), coverThumb: url };
+    const nextSeries = [...(store.series || [])];
+    nextSeries[idx] = { ...prev, seasons: nextSeasons };
+    const next = saveStore({ ...store, series: nextSeries });
+    await appendAdminAudit(req, 'season_cover_thumb_upload', `${id}:${seasonId}`, { url, created: false });
+    if (cleanupEnabled && prevUrl && prevUrl !== url) await maybeDeleteByUrl(prevUrl);
     return res.json({ success: true, url, updatedAt: next.updatedAt });
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
@@ -680,6 +923,7 @@ app.post('/api/admin/series/draft', (req, res) => {
       isDraft: true,
       description: '',
       cover: '',
+      coverThumb: '',
       status: '连载中',
       total: 0,
       category: '',
@@ -899,13 +1143,13 @@ app.get('/api/user/subscriptions', telegramAuth, (req, res) => {
       const seasons = Array.isArray(series.seasons) ? series.seasons : [];
       const superVip = series.superVip && typeof series.superVip === 'object' ? series.superVip : {};
       let displayTitle = String(series.title || '');
-      let cover = String(series.cover || '');
+      let cover = String(series.coverThumb || series.cover || '');
       let hasVipGroup = false;
       if (parsed.targetType === 'season') {
         const season = seasons.find((s) => String(s?.seasonId || '') === String(parsed.seasonId));
         if (season) {
           displayTitle = `${displayTitle} ${String(season.title || '')}`.trim();
-          cover = String(season.cover || '') || cover;
+          cover = String(season.coverThumb || season.cover || '') || cover;
           hasVipGroup = Boolean(season.vipGroupId);
         } else {
           hasVipGroup = Boolean(series.vipGroupId);
@@ -968,18 +1212,23 @@ app.post('/api/admin/series', (req, res) => {
     const incomingSeasons = Array.isArray(body.seasons) ? body.seasons : [];
     const normalizedSeasons = await Promise.all(incomingSeasons.map(async (s, idx) => {
       const sid = String(s?.seasonId || '').trim() || `s${idx + 1}`;
-      if (s && typeof s === 'object' && 'cover' in s) {
-        return { ...s, cover: await normalizeCoverValueForStorage(s.cover, `series_${id}_season_${sid}`) };
+      if (s && typeof s === 'object') {
+        const next = { ...s };
+        if ('cover' in next) next.cover = await normalizeCoverValueForStorage(next.cover, `series_${id}_season_${sid}_cover`);
+        if ('coverThumb' in next) next.coverThumb = await normalizeCoverValueForStorage(next.coverThumb, `series_${id}_season_${sid}_thumb`);
+        return next;
       }
       return s;
     }));
     const normalizedCover = await normalizeCoverValueForStorage(body.cover, `series_${id}`);
+    const normalizedCoverThumb = await normalizeCoverValueForStorage(body.coverThumb, `series_${id}_thumb`);
     const item = {
       id,
       title: body.title || '未命名剧集',
       isDraft: false,
       description: body.description || '',
       cover: normalizedCover || '',
+      coverThumb: normalizedCoverThumb || '',
       status: body.status || '连载中',
       total: Number(body.total || 0) || 0,
       category: body.category || '',
@@ -996,12 +1245,14 @@ app.post('/api/admin/series', (req, res) => {
       const exists = await Series.findOne({ id }).lean();
       if (exists) return res.status(400).json({ success: false, message: 'ID 已存在' });
       const created = await Series.create(item);
+      await appendAdminAudit(req, 'series_create', id, { title: item.title || '', seasonsCount: item.seasons?.length || 0, enabled: item.enabled !== false });
       return res.json({ success: true, item: created.toObject(), updatedAt: dateNowIso() });
     }
 
     const store = loadStore();
     if ((store.series || []).some((s) => s.id === id)) return res.status(400).json({ success: false, message: 'ID 已存在' });
     const next = saveStore({ ...store, series: [...(store.series || []), item] });
+    await appendAdminAudit(req, 'series_create', id, { title: item.title || '', seasonsCount: item.seasons?.length || 0, enabled: item.enabled !== false });
     return res.json({ success: true, item, updatedAt: next.updatedAt });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
 });
@@ -1019,12 +1270,16 @@ app.put('/api/admin/series/:id', (req, res) => {
         ? null
         : await Promise.all(incomingSeasons.map(async (s, idx) => {
             const sid = String(s?.seasonId || '').trim() || `s${idx + 1}`;
-            if (s && typeof s === 'object' && 'cover' in s) {
-              return { ...s, cover: await normalizeCoverValueForStorage(s.cover, `series_${id}_season_${sid}`) };
+            if (s && typeof s === 'object') {
+              const next = { ...s };
+              if ('cover' in next) next.cover = await normalizeCoverValueForStorage(next.cover, `series_${id}_season_${sid}_cover`);
+              if ('coverThumb' in next) next.coverThumb = await normalizeCoverValueForStorage(next.coverThumb, `series_${id}_season_${sid}_thumb`);
+              return next;
             }
             return s;
           }));
     const normalizedCover = body.cover !== undefined ? await normalizeCoverValueForStorage(body.cover, `series_${id}`) : undefined;
+    const normalizedCoverThumb = body.coverThumb !== undefined ? await normalizeCoverValueForStorage(body.coverThumb, `series_${id}_thumb`) : undefined;
 
     if (mongoReady) {
       const prev = await Series.findOne({ id }).lean();
@@ -1035,6 +1290,7 @@ app.put('/api/admin/series/:id', (req, res) => {
         isDraft: false,
         description: body.description !== undefined ? body.description : prev.description,
         cover: normalizedCover !== undefined ? normalizedCover : prev.cover,
+        coverThumb: normalizedCoverThumb !== undefined ? normalizedCoverThumb : prev.coverThumb,
         status: body.status !== undefined ? body.status : prev.status,
         total: body.total !== undefined ? Number(body.total || 0) : prev.total,
         category: body.category !== undefined ? body.category : prev.category,
@@ -1048,6 +1304,7 @@ app.put('/api/admin/series/:id', (req, res) => {
       };
       await Series.updateOne({ id }, { $set: nextItem });
       const updated = await Series.findOne({ id }).lean();
+      await appendAdminAudit(req, 'series_update', id, { keys: Object.keys(body || {}), seasonsCount: Array.isArray(nextItem.seasons) ? nextItem.seasons.length : null });
       return res.json({ success: true, item: updated, updatedAt: dateNowIso() });
     }
 
@@ -1061,6 +1318,7 @@ app.put('/api/admin/series/:id', (req, res) => {
       isDraft: false,
       description: body.description !== undefined ? body.description : prev.description,
       cover: normalizedCover !== undefined ? normalizedCover : prev.cover,
+      coverThumb: normalizedCoverThumb !== undefined ? normalizedCoverThumb : prev.coverThumb,
       status: body.status !== undefined ? body.status : prev.status,
       total: body.total !== undefined ? Number(body.total || 0) : prev.total,
       category: body.category !== undefined ? body.category : prev.category,
@@ -1075,6 +1333,7 @@ app.put('/api/admin/series/:id', (req, res) => {
     const nextSeries = [...store.series];
     nextSeries[idx] = nextItem;
     const next = saveStore({ ...store, series: nextSeries });
+    await appendAdminAudit(req, 'series_update', id, { keys: Object.keys(body || {}), seasonsCount: Array.isArray(nextItem.seasons) ? nextItem.seasons.length : null });
     return res.json({ success: true, item: nextItem, updatedAt: next.updatedAt });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
 });
@@ -1085,11 +1344,13 @@ app.delete('/api/admin/series/:id', (req, res) => {
     const id = req.params.id;
     if (mongoReady) {
       await Series.deleteOne({ id });
+      await appendAdminAudit(req, 'series_delete', id, null);
       return res.json({ success: true, updatedAt: dateNowIso() });
     }
     const store = loadStore();
     const nextSeries = (store.series || []).filter((s) => s.id !== id);
     const next = saveStore({ ...store, series: nextSeries });
+    await appendAdminAudit(req, 'series_delete', id, null);
     return res.json({ success: true, updatedAt: next.updatedAt });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
 });
@@ -1099,9 +1360,12 @@ app.post('/api/admin/migrate/covers', (req, res) => {
     if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
     const body = req.body || {};
     if (body.confirm !== true) return res.status(400).json({ success: false, message: '需要 confirm=true' });
+    await appendAdminAudit(req, 'covers_migrate_start', 'covers', null);
 
     let seriesCoverConverted = 0;
     let seasonCoverConverted = 0;
+    let seriesThumbConverted = 0;
+    let seasonThumbConverted = 0;
 
     const migrateSeries = async (item) => {
       const sid = String(item?.id || '').trim() || `series_${Date.now()}`;
@@ -1113,23 +1377,35 @@ app.post('/api/admin/migrate/covers', (req, res) => {
         changed = true;
         seriesCoverConverted += 1;
       }
+      const nextThumb = await normalizeCoverValueForStorage(next.coverThumb, `series_${sid}_thumb`);
+      if (nextThumb !== next.coverThumb) {
+        next.coverThumb = nextThumb;
+        changed = true;
+        seriesThumbConverted += 1;
+      }
       const seasons = Array.isArray(next.seasons) ? next.seasons : [];
       const nextSeasons = [];
       for (let idx = 0; idx < seasons.length; idx += 1) {
         const s = seasons[idx];
-        if (!s || typeof s !== 'object' || !('cover' in s)) {
+        if (!s || typeof s !== 'object' || (!('cover' in s) && !('coverThumb' in s))) {
           nextSeasons.push(s);
           continue;
         }
         const seasonId = String(s?.seasonId || '').trim() || `s${idx + 1}`;
-        const nc = await normalizeCoverValueForStorage(s.cover, `series_${sid}_season_${seasonId}`);
-        if (nc !== s.cover) {
+        const nextSeason = { ...s };
+        const nc = await normalizeCoverValueForStorage(nextSeason.cover, `series_${sid}_season_${seasonId}_cover`);
+        if (nc !== nextSeason.cover) {
+          nextSeason.cover = nc;
           seasonCoverConverted += 1;
           changed = true;
-          nextSeasons.push({ ...s, cover: nc });
-          continue;
         }
-        nextSeasons.push(s);
+        const nt = await normalizeCoverValueForStorage(nextSeason.coverThumb, `series_${sid}_season_${seasonId}_thumb`);
+        if (nt !== nextSeason.coverThumb) {
+          nextSeason.coverThumb = nt;
+          seasonThumbConverted += 1;
+          changed = true;
+        }
+        nextSeasons.push(nextSeason);
       }
       if (changed) next.seasons = nextSeasons;
       return { changed, next };
@@ -1139,9 +1415,10 @@ app.post('/api/admin/migrate/covers', (req, res) => {
       const items = await Series.find({}).lean();
       for (const it of items) {
         const { changed, next } = await migrateSeries(it);
-        if (changed) await Series.updateOne({ id: it.id }, { $set: { cover: next.cover, seasons: next.seasons } });
+        if (changed) await Series.updateOne({ id: it.id }, { $set: { cover: next.cover, coverThumb: next.coverThumb, seasons: next.seasons } });
       }
-      return res.json({ success: true, seriesCoverConverted, seasonCoverConverted, updatedAt: dateNowIso() });
+      await appendAdminAudit(req, 'covers_migrate_done', 'covers', { seriesCoverConverted, seasonCoverConverted, seriesThumbConverted, seasonThumbConverted });
+      return res.json({ success: true, seriesCoverConverted, seasonCoverConverted, seriesThumbConverted, seasonThumbConverted, updatedAt: dateNowIso() });
     }
 
     const store = loadStore();
@@ -1149,7 +1426,8 @@ app.post('/api/admin/migrate/covers', (req, res) => {
     const migratedList = await Promise.all(list.map((it) => migrateSeries(it)));
     const nextList = migratedList.map((x) => x.next);
     const next = saveStore({ ...store, series: nextList });
-    return res.json({ success: true, seriesCoverConverted, seasonCoverConverted, updatedAt: next.updatedAt });
+    await appendAdminAudit(req, 'covers_migrate_done', 'covers', { seriesCoverConverted, seasonCoverConverted, seriesThumbConverted, seasonThumbConverted });
+    return res.json({ success: true, seriesCoverConverted, seasonCoverConverted, seriesThumbConverted, seasonThumbConverted, updatedAt: next.updatedAt });
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
 
@@ -1179,6 +1457,10 @@ app.post('/api/admin/settings', (req, res) => {
         updateData.plans = body.plans;
       }
       await Config.updateOne({ key: 'default' }, { $set: updateData }, { upsert: true });
+      await appendAdminAudit(req, 'settings_update', 'settings', {
+        keys: Object.keys(body || {}),
+        plansCount: Array.isArray(body.plans) ? body.plans.length : null,
+      });
       return res.json({ success: true, settings: nextSettings, plans: updateData.plans || prev.plans, updatedAt: dateNowIso() });
     }
     const store = loadStore();
@@ -1194,6 +1476,10 @@ app.post('/api/admin/settings', (req, res) => {
       nextStore.plans = body.plans;
     }
     const next = saveStore(nextStore);
+    await appendAdminAudit(req, 'settings_update', 'settings', {
+      keys: Object.keys(body || {}),
+      plansCount: Array.isArray(body.plans) ? body.plans.length : null,
+    });
     return res.json({ success: true, settings: nextSettings, plans: nextStore.plans || store.plans, updatedAt: next.updatedAt });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
 });
@@ -1222,6 +1508,14 @@ app.post('/api/admin/payment', (req, res) => {
         },
       };
       await Config.updateOne({ key: 'default' }, { $set: { payment: nextPayment } }, { upsert: true });
+      await appendAdminAudit(req, 'payment_update', 'payment', {
+        alipay: {
+          merchantNo: body?.alipay?.merchantNo !== undefined ? String(body.alipay.merchantNo || '') : null,
+          merchantKeySet: body?.alipay?.merchantKey !== undefined,
+          apiUrl: body?.alipay?.apiUrl !== undefined ? String(body.alipay.apiUrl || '') : null,
+          productId: body?.alipay?.productId !== undefined ? String(body.alipay.productId || '') : null,
+        },
+      });
       return res.json({ success: true, payment: nextPayment, updatedAt: dateNowIso() });
     }
     const store = loadStore();
@@ -1235,6 +1529,14 @@ app.post('/api/admin/payment', (req, res) => {
       },
     };
     const next = saveStore({ ...store, payment: nextPayment });
+    await appendAdminAudit(req, 'payment_update', 'payment', {
+      alipay: {
+        merchantNo: body?.alipay?.merchantNo !== undefined ? String(body.alipay.merchantNo || '') : null,
+        merchantKeySet: body?.alipay?.merchantKey !== undefined,
+        apiUrl: body?.alipay?.apiUrl !== undefined ? String(body.alipay.apiUrl || '') : null,
+        productId: body?.alipay?.productId !== undefined ? String(body.alipay.productId || '') : null,
+      },
+    });
     return res.json({ success: true, payment: nextPayment, updatedAt: next.updatedAt });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
 });
@@ -1259,6 +1561,7 @@ app.post('/api/admin/telegram/menu-button', (req, res) => {
   (async () => {
     const body = req.body || {};
     const action = String(body.action || '');
+    await appendAdminAudit(req, 'telegram_menu_button', action, null);
     const cfg = await getConfig();
     const prevOverrides = cfg.telegramOverrides || {};
     const nextOverrides = { ...prevOverrides, menuButton: { ...(prevOverrides.menuButton || {}) } };
@@ -1303,6 +1606,7 @@ app.post('/api/admin/telegram/commands', (req, res) => {
   (async () => {
     const body = req.body || {};
     const action = String(body.action || '');
+    await appendAdminAudit(req, 'telegram_commands', action, { commandsCount: Array.isArray(body.commands) ? body.commands.length : null });
     const scope = { type: 'default' };
     const cfg = await getConfig();
     const prevOverrides = cfg.telegramOverrides || {};
@@ -1341,6 +1645,7 @@ app.post('/api/admin/telegram/webhook', (req, res) => {
     const action = String(body.action || '');
     if (action === 'delete') {
       const drop = Boolean(body.drop_pending_updates);
+      await appendAdminAudit(req, 'telegram_webhook_delete', 'webhook', { drop_pending_updates: drop });
       const r = await bot.telegram.callApi('deleteWebhook', { drop_pending_updates: drop });
       const cfg = await getConfig();
       const prevOverrides = cfg.telegramOverrides || {};
