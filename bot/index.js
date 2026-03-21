@@ -1355,6 +1355,86 @@ app.delete('/api/admin/series/:id', (req, res) => {
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
 });
 
+app.get('/api/admin/migrate/covers/preview', (req, res) => {
+  (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
+    const sampleLimit = Math.max(1, Math.min(50, Number(req.query?.sample || 10) || 10));
+
+    const isDataUrl = (v) => String(v || '').trim().startsWith('data:');
+
+    let totalSeries = 0;
+    let totalSeasons = 0;
+    let seriesCoverDataUrl = 0;
+    let seriesThumbDataUrl = 0;
+    let seasonCoverDataUrl = 0;
+    let seasonThumbDataUrl = 0;
+    const sampleSeriesIds = [];
+    const sampleSeasonKeys = [];
+
+    const inspectSeries = (it) => {
+      totalSeries += 1;
+      const sid = String(it?.id || '').trim();
+      const cover = it?.cover;
+      const coverThumb = it?.coverThumb;
+
+      const seriesHas = isDataUrl(cover) || isDataUrl(coverThumb);
+      if (seriesHas && sid && sampleSeriesIds.length < sampleLimit) sampleSeriesIds.push(sid);
+      if (isDataUrl(cover)) seriesCoverDataUrl += 1;
+      if (isDataUrl(coverThumb)) seriesThumbDataUrl += 1;
+
+      const seasons = Array.isArray(it?.seasons) ? it.seasons : [];
+      for (const s of seasons) {
+        totalSeasons += 1;
+        const seasonId = String(s?.seasonId || '').trim();
+        const sc = s?.cover;
+        const st = s?.coverThumb;
+        const seasonHas = isDataUrl(sc) || isDataUrl(st);
+        if (seasonHas && sid && seasonId && sampleSeasonKeys.length < sampleLimit) sampleSeasonKeys.push(`${sid}:${seasonId}`);
+        if (isDataUrl(sc)) seasonCoverDataUrl += 1;
+        if (isDataUrl(st)) seasonThumbDataUrl += 1;
+      }
+    };
+
+    if (mongoReady) {
+      const items = await Series.find({})
+        .select('id cover coverThumb seasons.seasonId seasons.cover seasons.coverThumb')
+        .lean();
+      for (const it of items) inspectSeries(it);
+    } else {
+      const store = loadStore();
+      const list = Array.isArray(store.series) ? store.series : [];
+      for (const it of list) inspectSeries(it);
+    }
+
+    const needsMigration = seriesCoverDataUrl + seriesThumbDataUrl + seasonCoverDataUrl + seasonThumbDataUrl > 0;
+    await appendAdminAudit(req, 'covers_migrate_preview', 'covers', {
+      needsMigration,
+      seriesCoverDataUrl,
+      seriesThumbDataUrl,
+      seasonCoverDataUrl,
+      seasonThumbDataUrl,
+    });
+
+    return res.json({
+      success: true,
+      needsMigration,
+      counts: {
+        totalSeries,
+        totalSeasons,
+        seriesCoverDataUrl,
+        seriesThumbDataUrl,
+        seasonCoverDataUrl,
+        seasonThumbDataUrl,
+      },
+      sample: {
+        seriesIds: sampleSeriesIds,
+        seasons: sampleSeasonKeys,
+      },
+      updatedAt: dateNowIso(),
+    });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
 app.post('/api/admin/migrate/covers', (req, res) => {
   (async () => {
     if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });

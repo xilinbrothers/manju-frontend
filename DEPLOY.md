@@ -164,7 +164,89 @@ Invoke-RestMethod -Method Post -Uri "$BASE/api/admin/migrate/covers" `
 
 ---
 
-## 7. 安全建议
+## 7. 上线 Runbook（部署选择 + 环境变量 + 自检/验收）
+
+### 7.1 部署选择（必须先定）
+
+- 如果后端运行在 **Serverless** 且文件系统不持久化：选择 `MEDIA_STORAGE=s3`
+- 如果后端运行在 **VPS / Docker（带 Volume）/ 常驻进程**：可以用 `MEDIA_STORAGE=local` 或 `MEDIA_STORAGE=s3`
+
+建议生产默认优先选择 `MEDIA_STORAGE=s3`（更不依赖机器与迁移更安全）。
+
+### 7.2 环境变量准备
+
+- 前端示例：根目录 [.env.example](file:///d:/CursorXiangMu/.env.example)
+- 后端示例： [bot/.env.example](file:///d:/CursorXiangMu/bot/.env.example)
+
+上线前把对应环境变量配置到你的部署平台（不要把真实密钥提交进仓库）。
+
+### 7.3 自检（部署后立即跑）
+
+准备一个管理员 Token（后台 Google 登录后的 JWT 或 `ADMIN_TOKEN`）。
+
+PowerShell（Windows）：
+
+```powershell
+.\scripts\prod-health.ps1 -BaseUrl "https://你的后端域名" -AdminToken "你的admin_token"
+```
+
+Bash：
+
+```bash
+./scripts/prod-health.sh "https://你的后端域名" "你的admin_token"
+```
+
+核心关注点：
+
+- `GET /api/admin/health/storage`：
+  - `storage.mode` 与你的预期一致
+  - local：`uploadsWritable=true`
+  - s3：`hasCredentials=true` 且 `bucketCheck.ok=true`
+- `GET /api/admin/migrate/covers/preview`：确认是否需要迁移（`needsMigration`）
+
+### 7.4 封面迁移（强烈建议：存储就绪后再跑）
+
+先预检：
+
+- `GET /api/admin/migrate/covers/preview`
+
+如果返回 `needsMigration=true`，再执行迁移：
+
+- `POST /api/admin/migrate/covers` body：`{"confirm":true}`
+
+PowerShell（Windows）一键执行：
+
+```powershell
+.\scripts\prod-migrate-covers.ps1 -BaseUrl "https://你的后端域名" -AdminToken "你的admin_token"
+```
+
+Bash 一键执行：
+
+```bash
+./scripts/prod-migrate-covers.sh "https://你的后端域名" "你的admin_token"
+```
+
+迁移后再次预检应变为 `needsMigration=false`（或相关 dataUrl 计数为 0）。
+
+### 7.5 开启清理（强烈建议）
+
+- local：设置 `MEDIA_CLEANUP=true`
+- s3：设置 `MEDIA_CLEANUP=true` 且 `S3_DELETE_ENABLED=true`（并确保有 DeleteObject 权限）
+
+开启后，替换封面/缩略图会尝试删除旧文件/旧对象，避免无限堆积。
+
+### 7.6 验收（人工）
+
+- 后台：
+  - 登录成功后可打开「操作日志」，确认能看到最新操作记录
+  - 剧集管理上传封面：能同时生成封面与缩略图（列表加载更快）
+- 用户端：
+  - 剧集列表封面正常显示（优先使用 `coverThumb`）
+  - 选季页封面正常显示（优先使用 `coverThumb`）
+
+---
+
+## 8. 安全建议
 
 - `ADMIN_JWT_SECRET` / `ADMIN_TOKEN` 必须足够长且不可复用
 - `ADMIN_EMAILS` 建议只包含必要管理员邮箱
