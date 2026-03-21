@@ -25,6 +25,7 @@
 - `BOT_TOKEN`：Telegram Bot Token（必配）
 - `WEB_APP_URL`：Telegram 菜单按钮跳转的 WebApp 地址（必配，通常是你的前端线上域名）
 - `MONGO_URI`：MongoDB 连接串（可选；不配则落盘到本地 JSON store）
+- `CORS_ORIGINS`：CORS 允许来源列表（可选，逗号分隔；不配则全部放行）
 
 ### 2.2 后台鉴权（强烈建议生产必配）
 
@@ -53,22 +54,31 @@
 
 ### 3.1 当前实现
 
-封面不再存 base64，而是存成 URL（如 `/uploads/covers/xxx.webp`），文件写入后端的：
+封面不再存 base64，而是存成 URL（如 `/uploads/covers/xxx.webp` 或 `https://cdn.example.com/covers/xxx.webp`）。
 
-- `bot/uploads/covers/`
+后端支持两种存储模式，由 `MEDIA_STORAGE` 控制：
 
-并通过 Express 静态路由对外提供：
+- `MEDIA_STORAGE=local`（默认）：写入 `bot/uploads/covers/` 并通过后端静态路由对外提供 `GET /uploads/covers/<filename>`
+- `MEDIA_STORAGE=s3`：上传到 S3/OSS/R2 兼容对象存储并返回公网 URL
 
-- `GET /uploads/covers/<filename>`
+### 3.2 对象存储（S3/OSS/R2）配置
 
-### 3.2 生产环境要求
+当 `MEDIA_STORAGE=s3` 时，后端需要以下环境变量：
 
-必须满足：`bot/uploads` **可写且持久化**。
+- `S3_BUCKET`：bucket 名称
+- `S3_ACCESS_KEY_ID`：访问 key
+- `S3_SECRET_ACCESS_KEY`：访问 secret
+- `S3_PUBLIC_BASE_URL`：用于拼接最终公网访问 URL（建议是自定义域名或 CDN 域名）
+- `S3_ENDPOINT`：可选，S3 兼容端点（R2/OSS/MinIO 通常需要）
+- `S3_REGION`：可选，默认 `auto`
+- `S3_PREFIX`：可选，上传路径前缀（不含前后 `/`）
+
+### 3.3 本地磁盘（local）生产环境要求
+
+当 `MEDIA_STORAGE=local` 时，必须满足：`bot/uploads` **可写且持久化**。
 
 - 适合：VPS、常驻进程、Docker + Volume
 - 不适合：多数 Serverless（例如 Vercel Serverless Function）默认文件系统不持久化
-
-若最终选择 Serverless，建议改造为对象存储（S3/OSS/R2）并把 `saveImageBufferToUploads` 替换为上传到对象存储，返回公网 URL。
 
 ---
 
@@ -151,4 +161,3 @@ Invoke-RestMethod -Method Post -Uri "$BASE/api/admin/migrate/covers" `
 - `ADMIN_JWT_SECRET` / `ADMIN_TOKEN` 必须足够长且不可复用
 - `ADMIN_EMAILS` 建议只包含必要管理员邮箱
 - 生产建议禁用 `*` 级别 CORS（按实际域名放行）
-

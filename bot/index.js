@@ -17,6 +17,7 @@ const User = require('./models/User');
 const Order = require('./models/Order');
 const Payment = require('./models/Payment');
 const DailyStat = require('./models/DailyStat');
+const { getUploadsDir, getStorageMode, saveImageBuffer, normalizeCoverValueForStorage } = require('./mediaStorage');
 
 // 检查必要的环境变量
 if (!process.env.BOT_TOKEN) {
@@ -178,7 +179,20 @@ const upsertUserFromTg = async (tgUser) => {
  * Express 服务器部分 (处理 API 请求)
  */
 const app = express();
-app.use(cors());
+const corsOrigins = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((x) => String(x || '').trim())
+  .filter(Boolean);
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (corsOrigins.length === 0) return cb(null, true);
+      if (corsOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error('CORS blocked'), false);
+    },
+  })
+);
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
@@ -189,11 +203,13 @@ app.use((err, req, res, next) => {
   return next(err);
 });
 
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-try {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-} catch {}
-app.use('/uploads', express.static(UPLOADS_DIR));
+const UPLOADS_DIR = getUploadsDir();
+if (getStorageMode() === 'local') {
+  try {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  } catch {}
+  app.use('/uploads', express.static(UPLOADS_DIR));
+}
 
 const dateNowIso = () => new Date().toISOString();
 
@@ -201,35 +217,6 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 },
 });
-
-const parseImageDataUrl = (s) => {
-  const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/.exec(String(s || '').trim());
-  if (!m) return null;
-  return { mime: m[1], base64: m[2] };
-};
-
-const saveImageBufferToUploads = (buffer, mime, namePrefix) => {
-  const okTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
-  const mt = String(mime || '').toLowerCase();
-  if (!okTypes.has(mt)) throw new Error('仅支持 JPG/PNG/WEBP');
-  const coverDir = path.join(UPLOADS_DIR, 'covers');
-  fs.mkdirSync(coverDir, { recursive: true });
-  const ext = mt === 'image/png' ? 'png' : mt === 'image/webp' ? 'webp' : 'jpg';
-  const safePrefix = String(namePrefix || 'img').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 48);
-  const name = `${safePrefix}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}.${ext}`;
-  fs.writeFileSync(path.join(coverDir, name), buffer);
-  return `/uploads/covers/${name}`;
-};
-
-const normalizeCoverValueForStorage = (coverValue, namePrefix) => {
-  const raw = String(coverValue || '').trim();
-  if (!raw) return '';
-  if (!raw.startsWith('data:')) return raw;
-  const parsed = parseImageDataUrl(raw);
-  if (!parsed) return raw;
-  const buf = Buffer.from(parsed.base64, 'base64');
-  return saveImageBufferToUploads(buf, parsed.mime, namePrefix);
-};
 
 const getAllowedAdminEmails = () => {
   const raw = String(process.env.ADMIN_EMAILS || '').trim();
@@ -598,7 +585,7 @@ app.post('/api/admin/series/:id/cover', upload.single('file'), (req, res) => {
     if (!id) return res.status(400).json({ success: false, message: '参数缺失' });
     const file = req.file;
     if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
-    const url = saveImageBufferToUploads(file.buffer, file.mimetype, `series_${id}_cover`);
+    const url = await saveImageBuffer(file.buffer, file.mimetype, `series_${id}_cover`);
 
     if (mongoReady) {
       const prev = await Series.findOne({ id }).lean();
@@ -625,7 +612,7 @@ app.post('/api/admin/series/:id/seasons/:seasonId/cover', upload.single('file'),
     if (!id || !seasonId) return res.status(400).json({ success: false, message: '参数缺失' });
     const file = req.file;
     if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
-    const url = saveImageBufferToUploads(file.buffer, file.mimetype, `series_${id}_season_${seasonId}_cover`);
+    const url = await saveImageBuffer(file.buffer, file.mimetype, `series_${id}_season_${seasonId}_cover`);
 
     if (mongoReady) {
       const prev = await Series.findOne({ id }).lean();
@@ -979,19 +966,20 @@ app.post('/api/admin/series', (req, res) => {
     if (!check.ok) return res.status(400).json({ success: false, message: check.message || '配置不合法' });
     const id = body.id || `series_${Date.now()}`;
     const incomingSeasons = Array.isArray(body.seasons) ? body.seasons : [];
-    const normalizedSeasons = incomingSeasons.map((s, idx) => {
+    const normalizedSeasons = await Promise.all(incomingSeasons.map(async (s, idx) => {
       const sid = String(s?.seasonId || '').trim() || `s${idx + 1}`;
       if (s && typeof s === 'object' && 'cover' in s) {
-        return { ...s, cover: normalizeCoverValueForStorage(s.cover, `series_${id}_season_${sid}`) };
+        return { ...s, cover: await normalizeCoverValueForStorage(s.cover, `series_${id}_season_${sid}`) };
       }
       return s;
-    });
+    }));
+    const normalizedCover = await normalizeCoverValueForStorage(body.cover, `series_${id}`);
     const item = {
       id,
       title: body.title || '未命名剧集',
       isDraft: false,
       description: body.description || '',
-      cover: normalizeCoverValueForStorage(body.cover, `series_${id}`) || '',
+      cover: normalizedCover || '',
       status: body.status || '连载中',
       total: Number(body.total || 0) || 0,
       category: body.category || '',
@@ -1029,14 +1017,14 @@ app.put('/api/admin/series/:id', (req, res) => {
     const normalizedSeasons =
       incomingSeasons === null
         ? null
-        : incomingSeasons.map((s, idx) => {
+        : await Promise.all(incomingSeasons.map(async (s, idx) => {
             const sid = String(s?.seasonId || '').trim() || `s${idx + 1}`;
             if (s && typeof s === 'object' && 'cover' in s) {
-              return { ...s, cover: normalizeCoverValueForStorage(s.cover, `series_${id}_season_${sid}`) };
+              return { ...s, cover: await normalizeCoverValueForStorage(s.cover, `series_${id}_season_${sid}`) };
             }
             return s;
-          });
-    const normalizedCover = body.cover !== undefined ? normalizeCoverValueForStorage(body.cover, `series_${id}`) : undefined;
+          }));
+    const normalizedCover = body.cover !== undefined ? await normalizeCoverValueForStorage(body.cover, `series_${id}`) : undefined;
 
     if (mongoReady) {
       const prev = await Series.findOne({ id }).lean();
@@ -1115,28 +1103,34 @@ app.post('/api/admin/migrate/covers', (req, res) => {
     let seriesCoverConverted = 0;
     let seasonCoverConverted = 0;
 
-    const migrateSeries = (item) => {
+    const migrateSeries = async (item) => {
       const sid = String(item?.id || '').trim() || `series_${Date.now()}`;
       let changed = false;
       const next = { ...(item || {}) };
-      const nextCover = normalizeCoverValueForStorage(next.cover, `series_${sid}`);
+      const nextCover = await normalizeCoverValueForStorage(next.cover, `series_${sid}`);
       if (nextCover !== next.cover) {
         next.cover = nextCover;
         changed = true;
         seriesCoverConverted += 1;
       }
       const seasons = Array.isArray(next.seasons) ? next.seasons : [];
-      const nextSeasons = seasons.map((s, idx) => {
-        if (!s || typeof s !== 'object' || !('cover' in s)) return s;
+      const nextSeasons = [];
+      for (let idx = 0; idx < seasons.length; idx += 1) {
+        const s = seasons[idx];
+        if (!s || typeof s !== 'object' || !('cover' in s)) {
+          nextSeasons.push(s);
+          continue;
+        }
         const seasonId = String(s?.seasonId || '').trim() || `s${idx + 1}`;
-        const nc = normalizeCoverValueForStorage(s.cover, `series_${sid}_season_${seasonId}`);
+        const nc = await normalizeCoverValueForStorage(s.cover, `series_${sid}_season_${seasonId}`);
         if (nc !== s.cover) {
           seasonCoverConverted += 1;
           changed = true;
-          return { ...s, cover: nc };
+          nextSeasons.push({ ...s, cover: nc });
+          continue;
         }
-        return s;
-      });
+        nextSeasons.push(s);
+      }
       if (changed) next.seasons = nextSeasons;
       return { changed, next };
     };
@@ -1144,7 +1138,7 @@ app.post('/api/admin/migrate/covers', (req, res) => {
     if (mongoReady) {
       const items = await Series.find({}).lean();
       for (const it of items) {
-        const { changed, next } = migrateSeries(it);
+        const { changed, next } = await migrateSeries(it);
         if (changed) await Series.updateOne({ id: it.id }, { $set: { cover: next.cover, seasons: next.seasons } });
       }
       return res.json({ success: true, seriesCoverConverted, seasonCoverConverted, updatedAt: dateNowIso() });
@@ -1152,7 +1146,8 @@ app.post('/api/admin/migrate/covers', (req, res) => {
 
     const store = loadStore();
     const list = Array.isArray(store.series) ? store.series : [];
-    const nextList = list.map((it) => migrateSeries(it).next);
+    const migratedList = await Promise.all(list.map((it) => migrateSeries(it)));
+    const nextList = migratedList.map((x) => x.next);
     const next = saveStore({ ...store, series: nextList });
     return res.json({ success: true, seriesCoverConverted, seasonCoverConverted, updatedAt: next.updatedAt });
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
