@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import PageHeader from '../components/ui/PageHeader';
 
 const UserSubscription = () => {
   const [activeTab, setActiveTab] = useState('users');
@@ -33,57 +36,53 @@ const UserSubscription = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
-          <div className="text-xl font-black text-slate-900">用户与订阅</div>
-          <div className="text-sm text-slate-500 font-medium">查看用户活跃与订阅记录（示例数据）</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <select 
-            value={timeRange} 
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="h-10 px-4 rounded-xl bg-slate-100 border border-slate-200 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          >
-            <option value="7d">近7天</option>
-            <option value="30d">近30天</option>
-            <option value="90d">近90天</option>
-            <option value="custom">自定义</option>
-          </select>
-          <button className="h-10 px-4 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold transition-colors">
-            导出
-          </button>
-          <button className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors">
-            新增订阅
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="用户与订阅"
+        subtitle="查看用户活跃与订阅记录（示例数据）"
+        right={
+          <>
+            <select
+              value={timeRange}
+              onChange={(e) => setTimeRange(e.target.value)}
+              className="h-10 px-4 rounded-xl bg-slate-100 border border-slate-200 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            >
+              <option value="7d">近7天</option>
+              <option value="30d">近30天</option>
+              <option value="90d">近90天</option>
+              <option value="custom">自定义</option>
+            </select>
+            <Button variant="ghost">导出</Button>
+            <Button>新增订阅</Button>
+          </>
+        }
+      />
 
       {/* 统计概览 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <Card className="p-6">
           <div className="text-sm font-medium text-slate-500">总用户数</div>
           <div className="text-2xl font-black text-slate-900 mt-1">{stats.totalUsers}</div>
           <div className="text-xs text-emerald-600 font-bold mt-2">↗ +12.5% 较上月</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        </Card>
+        <Card className="p-6">
           <div className="text-sm font-medium text-slate-500">活跃用户数</div>
           <div className="text-2xl font-black text-slate-900 mt-1">{stats.activeUsers}</div>
           <div className="text-xs text-emerald-600 font-bold mt-2">↗ +8.3% 较上月</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        </Card>
+        <Card className="p-6">
           <div className="text-sm font-medium text-slate-500">总订阅用户数</div>
           <div className="text-2xl font-black text-slate-900 mt-1">{stats.totalSubscribers}</div>
           <div className="text-xs text-emerald-600 font-bold mt-2">↗ +5.2% 较上月</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        </Card>
+        <Card className="p-6">
           <div className="text-sm font-medium text-slate-500">复购率</div>
           <div className="text-2xl font-black text-slate-900 mt-1">{stats.repurchaseRate}</div>
           <div className="text-xs text-emerald-600 font-bold mt-2">↗ +2.1% 较上月</div>
-        </div>
+        </Card>
       </div>
 
       {/* 订阅状态占比 */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+      <Card className="p-6">
         <div className="text-base font-black text-slate-900 mb-4">订阅状态分布</div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-emerald-50 rounded-xl p-4">
@@ -107,9 +106,9 @@ const UserSubscription = () => {
             <div className="text-xs text-slate-600 font-bold mt-1">{Math.round(stats.statusStats.unsubscribed / stats.totalUsers * 100)}%</div>
           </div>
         </div>
-      </div>
+      </Card>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2 bg-slate-100 border border-slate-200 rounded-2xl p-1">
             <button 
@@ -156,9 +155,7 @@ const UserSubscription = () => {
                 <td className="px-8 py-5 text-sm text-slate-600 font-medium">{u.lastActive}</td>
                 <td className="px-8 py-5 text-sm font-black text-indigo-700">{u.totalSubs}</td>
                 <td className="px-8 py-5 text-right text-sm">
-                  <button className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm transition-colors">
-                    详情
-                  </button>
+                  <Button variant="secondary" size="sm">详情</Button>
                 </td>
               </tr>
             ))}
@@ -197,15 +194,15 @@ const UserSubscription = () => {
                   </span>
                 </td>
                 <td className="px-8 py-5 text-right text-sm">
-                   <button className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm transition-colors mr-2">延长</button>
-                   <button className="h-9 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-sm transition-colors">作废</button>
+                   <Button variant="secondary" size="sm" className="mr-2">延长</Button>
+                   <Button variant="danger" size="sm">作废</Button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-      </div>
+      </Card>
     </div>
   );
 };

@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetchJson } from '../utils/api';
+import AlertBar from '../components/AlertBar';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import PageHeader from '../components/ui/PageHeader';
 
 const PlansPricing = ({ onAlert }) => {
   const [plans, setPlans] = useState([]);
@@ -72,18 +76,11 @@ const PlansPricing = ({ onAlert }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
-          <div className="text-xl font-black text-slate-900">全局套餐与定价</div>
-          <div className="text-sm text-slate-500 font-medium">配置默认套餐，所有未单独覆盖套餐的剧集将使用此配置。</div>
-        </div>
-        <button 
-          onClick={addPlan}
-          className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold transition-colors"
-        >
-          新增套餐
-        </button>
-      </div>
+      <PageHeader
+        title="全局套餐与定价"
+        subtitle="配置默认套餐，所有未单独覆盖套餐的剧集将使用此配置。"
+        right={<Button variant="neutral" onClick={addPlan}>新增套餐</Button>}
+      />
 
       <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5">
         <div className="text-sm font-black text-indigo-800">说明</div>
@@ -93,12 +90,10 @@ const PlansPricing = ({ onAlert }) => {
       </div>
 
       {error && (
-        <div className="p-4 bg-rose-50 text-rose-600 rounded-xl text-sm font-bold border border-rose-100">
-          {error}
-        </div>
+        <AlertBar type="error" message={error} />
       )}
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <Card className="overflow-hidden">
         <table className="w-full text-left">
           <thead className="bg-slate-50 text-slate-500 text-xs font-black uppercase tracking-wider">
             <tr>
@@ -149,12 +144,7 @@ const PlansPricing = ({ onAlert }) => {
                   </label>
                 </td>
                 <td className="px-8 py-5 text-right">
-                  <button 
-                    onClick={() => removePlan(index)}
-                    className="h-9 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-sm transition-colors"
-                  >
-                    删除
-                  </button>
+                  <Button variant="danger" size="sm" onClick={() => removePlan(index)}>删除</Button>
                 </td>
               </tr>
             ))}
@@ -167,16 +157,12 @@ const PlansPricing = ({ onAlert }) => {
             )}
           </tbody>
         </table>
-      </div>
+      </Card>
 
       <div className="flex justify-end">
-        <button 
-          onClick={handleSave}
-          disabled={isSaving}
-          className="h-11 px-8 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold transition-colors"
-        >
+        <Button onClick={handleSave} disabled={isSaving} size="lg" className="px-8">
           {isSaving ? '保存中...' : '保存全局配置'}
-        </button>
+        </Button>
       </div>
     </div>
   );
