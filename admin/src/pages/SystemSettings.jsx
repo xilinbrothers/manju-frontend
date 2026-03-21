@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
 import AlertBar from '../components/AlertBar';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import PageHeader from '../components/ui/PageHeader';
 
 const SystemSettings = ({ onAlert }) => {
   const [draft, setDraft] = useState({
@@ -283,20 +286,14 @@ const SystemSettings = ({ onAlert }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
-          <div className="text-xl font-black text-slate-900">系统设置</div>
-          <div className="text-sm text-slate-500 font-medium">到期判定、定时任务与欢迎文案</div>
-        </div>
-        <button onClick={save} className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold transition-colors">
-          保存
-        </button>
-      </div>
+      <PageHeader
+        title="系统设置"
+        subtitle="到期判定、定时任务与欢迎文案"
+        right={<Button variant="neutral" onClick={save}>保存</Button>}
+      />
 
       {error && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm font-semibold rounded-2xl p-4">
-          {error}
-        </div>
+        <AlertBar type="error" message={error} />
       )}
 
       {isLoading ? (
@@ -304,7 +301,7 @@ const SystemSettings = ({ onAlert }) => {
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <div className="xl:col-span-2 space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+            <Card className="p-6 space-y-5">
               <div className="text-base font-black text-slate-900">到期规则</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -332,9 +329,9 @@ const SystemSettings = ({ onAlert }) => {
               <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-xs text-slate-600 font-medium leading-relaxed">
                 定时任务默认在 00/04/08/12/16/20 点执行一次。到期后会尝试从 VIP 群移出并发送通知（需 Bot 为群管理员）。
               </div>
-            </div>
+            </Card>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+            <Card className="p-6 space-y-5">
               <div className="text-base font-black text-slate-900">欢迎与客服</div>
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-700">客服链接</label>
@@ -355,22 +352,17 @@ const SystemSettings = ({ onAlert }) => {
                   className="w-full bg-slate-100 border border-slate-200 rounded-xl py-3 px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-slate-900/20 focus:border-slate-300"
                 />
               </div>
-            </div>
+            </Card>
           </div>
 
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <Card className="p-6 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="text-base font-black text-slate-900">Telegram 菜单按钮</div>
                   <div className="text-xs text-slate-500 font-medium">默认以 Telegram 端为准；后台仅在手动覆盖时写入</div>
                 </div>
-                <button
-                  onClick={refreshMenuButton}
-                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
-                >
-                  刷新
-                </button>
+                <Button variant="secondary" size="sm" onClick={refreshMenuButton}>刷新</Button>
               </div>
 
               {isMenuLoading ? (
@@ -435,18 +427,8 @@ const SystemSettings = ({ onAlert }) => {
                         placeholder="WebApp URL（例如：https://manju-jade.vercel.app）"
                       />
                       <div className="flex gap-2">
-                        <button
-                          onClick={applyMenuOverride}
-                          className="flex-1 h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors"
-                        >
-                          覆盖为 WebApp
-                        </button>
-                        <button
-                          onClick={clearMenuOverride}
-                          className="flex-1 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
-                        >
-                          清除覆盖
-                        </button>
+                        <Button className="flex-1" onClick={applyMenuOverride}>覆盖为 WebApp</Button>
+                        <Button variant="secondary" className="flex-1" onClick={clearMenuOverride}>清除覆盖</Button>
                       </div>
                       {overridesInfo?.overrides?.menuButton?.updatedAtIso ? (
                         <div className="text-[11px] text-slate-500 font-medium">覆盖记录更新时间：{overridesInfo.overrides.menuButton.updatedAtIso}</div>
@@ -455,20 +437,15 @@ const SystemSettings = ({ onAlert }) => {
                   </div>
                 </div>
               )}
-            </div>
+            </Card>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <Card className="p-6 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="text-base font-black text-slate-900">Telegram Bot 信息</div>
                   <div className="text-xs text-slate-500 font-medium">supports_inline_queries 用于核对 Inline Mode</div>
                 </div>
-                <button
-                  onClick={refreshBotInfo}
-                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
-                >
-                  刷新
-                </button>
+                <Button variant="secondary" size="sm" onClick={refreshBotInfo}>刷新</Button>
               </div>
 
               {isBotLoading ? (
@@ -491,20 +468,15 @@ const SystemSettings = ({ onAlert }) => {
                   </div>
                 </div>
               )}
-            </div>
+            </Card>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <Card className="p-6 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="text-base font-black text-slate-900">Telegram 命令列表</div>
                   <div className="text-xs text-slate-500 font-medium">默认以 Telegram 端为准；后台仅在手动覆盖时写入</div>
                 </div>
-                <button
-                  onClick={refreshCommands}
-                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
-                >
-                  刷新
-                </button>
+                <Button variant="secondary" size="sm" onClick={refreshCommands}>刷新</Button>
               </div>
 
               {isCommandsLoading ? (
@@ -540,18 +512,8 @@ const SystemSettings = ({ onAlert }) => {
                       className="w-full bg-slate-100 border border-slate-200 rounded-xl py-2 px-3 text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     />
                     <div className="flex gap-2">
-                      <button
-                        onClick={applyCommandsOverride}
-                        className="flex-1 h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors"
-                      >
-                        覆盖命令
-                      </button>
-                      <button
-                        onClick={clearCommandsOverride}
-                        className="flex-1 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
-                      >
-                        清除覆盖
-                      </button>
+                      <Button className="flex-1" onClick={applyCommandsOverride}>覆盖命令</Button>
+                      <Button variant="secondary" className="flex-1" onClick={clearCommandsOverride}>清除覆盖</Button>
                     </div>
                     {overridesInfo?.overrides?.commands?.updatedAtIso ? (
                       <div className="text-[11px] text-slate-500 font-medium">覆盖记录更新时间：{overridesInfo.overrides.commands.updatedAtIso}</div>
@@ -559,20 +521,15 @@ const SystemSettings = ({ onAlert }) => {
                   </div>
                 </div>
               )}
-            </div>
+            </Card>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <Card className="p-6 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="text-base font-black text-slate-900">Webhook 状态</div>
                   <div className="text-xs text-slate-500 font-medium">Webhook 与轮询二选一；本系统默认使用轮询</div>
                 </div>
-                <button
-                  onClick={refreshWebhook}
-                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
-                >
-                  刷新
-                </button>
+                <Button variant="secondary" size="sm" onClick={refreshWebhook}>刷新</Button>
               </div>
 
               {isWebhookLoading ? (
@@ -597,12 +554,7 @@ const SystemSettings = ({ onAlert }) => {
                     </div>
                   ) : null}
                   {webhookInfo?.url ? (
-                    <button
-                      onClick={deleteWebhook}
-                      className="w-full h-10 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition-colors"
-                    >
-                      删除 Webhook（启用轮询）
-                    </button>
+                    <Button variant="danger" className="w-full" onClick={deleteWebhook}>删除 Webhook（启用轮询）</Button>
                   ) : null}
                   <div className="flex items-center justify-between">
                     <div className="text-slate-500 font-semibold">待处理更新</div>
@@ -614,20 +566,15 @@ const SystemSettings = ({ onAlert }) => {
                   </div>
                 </div>
               )}
-            </div>
+            </Card>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <Card className="p-6 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="text-base font-black text-slate-900">群组权限自检</div>
                   <div className="text-xs text-slate-500 font-medium">核对 Bot 在试看群/VIP群的权限与配置格式</div>
                 </div>
-                <button
-                  onClick={refreshGroupCheck}
-                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
-                >
-                  检查
-                </button>
+                <Button variant="secondary" size="sm" onClick={refreshGroupCheck}>检查</Button>
               </div>
 
               {isGroupCheckLoading ? (
@@ -720,17 +667,17 @@ const SystemSettings = ({ onAlert }) => {
                   </div>
                 </div>
               )}
-            </div>
+            </Card>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <Card className="p-6 space-y-4">
               <div className="text-base font-black text-slate-900">快捷操作</div>
-              <button
-                onClick={refresh}
-                className="w-full h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors"
-              >
+              <Button variant="secondary" size="lg" className="w-full" onClick={refresh}>
                 重新加载
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="neutral"
+                size="lg"
+                className="w-full"
                 onClick={async () => {
                   try {
                     await apiFetchJson('/api/admin/stats/daily/recompute', { method: 'POST', body: JSON.stringify({}) });
@@ -739,11 +686,10 @@ const SystemSettings = ({ onAlert }) => {
                     onAlert?.('error', e?.message || '操作失败');
                   }
                 }}
-                className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold transition-colors"
               >
                 重算今日统计
-              </button>
-            </div>
+              </Button>
+            </Card>
           </div>
         </div>
       )}
