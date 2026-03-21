@@ -9,6 +9,7 @@ import CopywritingConfig from './pages/CopywritingConfig';
 import AdminManagement from './pages/AdminManagement';
 import FinanceCenter from './pages/FinanceCenter';
 import SystemSettings from './pages/SystemSettings';
+import AdminAuditLog from './pages/AdminAuditLog';
 import AlertBar from './components/AlertBar';
 import Card from './components/ui/Card';
 import { apiFetchJson } from './utils/api';
@@ -137,6 +138,8 @@ const AdminApp = () => {
         return <SystemSettings onAlert={(type, message) => setAppAlert({ type, message })} />;
       case 'admins':
         return <AdminManagement />;
+      case 'audit':
+        return <AdminAuditLog />;
       default:
         return <Dashboard />;
     }

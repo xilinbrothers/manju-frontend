@@ -27,6 +27,7 @@ const AdminLayout = ({ children, activeMenu, onMenuChange, user, onLogout }) => 
       items: [
         { id: 'settings', label: '系统设置', icon: '⚙️' },
         { id: 'admins', label: '管理员管理', icon: '🛡️' },
+        { id: 'audit', label: '操作日志', icon: '📜' },
       ],
     },
   ];
