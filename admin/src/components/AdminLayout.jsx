@@ -39,8 +39,9 @@ const AdminLayout = ({ children, activeMenu, onMenuChange, user, onLogout }) => 
   }
 
   return (
-    <div className="flex min-h-dvh w-full bg-[var(--app-bg)] text-[var(--app-fg)]">
-      <aside className="w-[248px] shrink-0 bg-[var(--app-card)] border-r border-[color:var(--app-border)] min-h-dvh flex flex-col">
+    <div className="min-h-dvh w-full bg-[var(--app-bg)] text-[var(--app-fg)] p-4">
+      <div className="flex min-h-[calc(100dvh-32px)] w-full gap-4">
+        <aside className="w-[248px] shrink-0 bg-[var(--app-card)] border border-[color:var(--app-border)] rounded-[var(--app-radius-lg)] shadow-[var(--app-shadow-sm)] overflow-hidden flex flex-col">
         <div className="px-5 py-5">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-lg bg-slate-900 flex items-center justify-center text-white font-black">
@@ -110,13 +111,14 @@ const AdminLayout = ({ children, activeMenu, onMenuChange, user, onLogout }) => 
             </button>
           </div>
         </div>
-      </aside>
+        </aside>
 
-      <main className="flex-1 min-w-0 bg-[var(--app-bg)]">
-        <div className="mx-auto w-full max-w-[var(--app-page-max)] px-[var(--app-gutter)] py-7">
-          {children}
-        </div>
-      </main>
+        <main className="flex-1 min-w-0 bg-[var(--app-bg)] border border-[color:var(--app-border)] rounded-[var(--app-radius-lg)] shadow-[var(--app-shadow-sm)] overflow-hidden">
+          <div className="mx-auto w-full max-w-[var(--app-page-max)] px-[var(--app-gutter)] py-8">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 };
