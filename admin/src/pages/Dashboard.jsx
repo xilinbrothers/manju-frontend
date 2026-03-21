@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
+import AlertBar from '../components/AlertBar';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import PageHeader from '../components/ui/PageHeader';
 
 const Dashboard = () => {
   const [userStats, setUserStats] = useState(null);
@@ -99,36 +103,29 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <div className="text-sm text-slate-500 font-semibold">仪表盘</div>
-          <div className="text-lg font-black text-slate-900">概览</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
+      <PageHeader
+        title="概览"
+        subtitle="仪表盘"
+        right={
+          <Button
+            variant="neutral"
             onClick={() => {
               refresh();
               refreshDaily(rangeDays);
             }}
-            className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold transition-colors"
           >
             刷新数据
-          </button>
-        </div>
-      </div>
+          </Button>
+        }
+      />
 
       {error && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm font-semibold rounded-2xl p-4">
-          {error}
-        </div>
+        <AlertBar type="error" message={error} />
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5"
-          >
+          <Card key={stat.label} className="p-5">
             <div className="flex items-center justify-between">
               <div className="h-11 w-11 rounded-2xl bg-slate-900 flex items-center justify-center text-white text-xl">
                 {stat.icon}
@@ -137,12 +134,12 @@ const Dashboard = () => {
             </div>
             <div className="mt-4 text-xs font-bold text-slate-500">{stat.label}</div>
             <div className="mt-1 text-2xl font-black text-slate-900">{stat.value}</div>
-          </div>
+          </Card>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <Card className="p-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <div className="text-base font-black text-slate-900">收入趋势</div>
@@ -193,9 +190,9 @@ const Dashboard = () => {
               </>
             )}
           </div>
-        </div>
+        </Card>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <Card className="p-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <div className="text-base font-black text-slate-900">用户增长趋势</div>
@@ -228,7 +225,7 @@ const Dashboard = () => {
               })
             )}
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );

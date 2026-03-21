@@ -4,13 +4,17 @@
   --app-muted: rgba(71, 85, 105, 1);
   --app-card: #ffffff;
   --app-border: rgba(226, 232, 240, 1);
+  --app-overlay: rgba(241, 245, 249, 0.82);
+  --app-overlay-border: rgba(226, 232, 240, 1);
+  --app-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
 
   --app-primary: #4f46e5;
   --app-primary-hover: #4338ca;
+  --app-danger: #e11d48;
+  --app-danger-hover: #be123c;
 
   --app-radius-lg: 24px;
   --app-radius-md: 16px;
 
   --app-space: 16px;
 }
-

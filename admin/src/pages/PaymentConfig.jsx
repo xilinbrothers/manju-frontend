@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
 import { getApiBaseUrl } from '../utils/api';
+import AlertBar from '../components/AlertBar';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import PageHeader from '../components/ui/PageHeader';
 
 const PaymentConfig = ({ onAlert }) => {
   const [draft, setDraft] = useState({
@@ -42,24 +46,22 @@ const PaymentConfig = ({ onAlert }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
-          <div className="text-xl font-black text-slate-900">支付配置</div>
-          <div className="text-sm text-slate-500 font-medium">配置支付宝通道</div>
-        </div>
-        <button onClick={saveAll} className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors">
-          保存全部
-        </button>
-      </div>
+      <PageHeader
+        title="支付配置"
+        subtitle="配置支付宝通道"
+        right={
+          <Button onClick={saveAll}>
+            保存全部
+          </Button>
+        }
+      />
 
       {error && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm font-semibold rounded-2xl p-4">
-          {error}
-        </div>
+        <AlertBar type="error" message={error} />
       )}
 
       <div className="grid grid-cols-1 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col">
+        <Card className="p-6 flex flex-col">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="h-11 w-11 rounded-2xl bg-[#1677FF] flex items-center justify-center">
@@ -70,9 +72,9 @@ const PaymentConfig = ({ onAlert }) => {
                 <div className="text-xs text-slate-500 font-medium">易支付 / 当面付 / 聚合</div>
               </div>
             </div>
-            <button className="h-10 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors">
+            <Button variant="secondary">
               测试
-            </button>
+            </Button>
           </div>
 
           <div className="mt-6 space-y-4 flex-1">
@@ -136,14 +138,14 @@ const PaymentConfig = ({ onAlert }) => {
           </div>
 
           <div className="mt-6 flex gap-2">
-            <button onClick={refresh} className="flex-1 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors">
+            <Button variant="secondary" size="lg" className="flex-1" onClick={refresh}>
               重置
-            </button>
-            <button onClick={saveAll} className="flex-1 h-11 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors">
+            </Button>
+            <Button size="lg" className="flex-1" onClick={saveAll}>
               保存
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );
