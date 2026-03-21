@@ -6,6 +6,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
 const { verifyTelegramWebAppData, parseTelegramInitData } = require('./utils');
 const { loadStore, saveStore, upsertUser } = require('./store');
 const { connectMongo, getMongoUri } = require('./db');
@@ -229,20 +231,99 @@ const normalizeCoverValueForStorage = (coverValue, namePrefix) => {
   return saveImageBufferToUploads(buf, parsed.mime, namePrefix);
 };
 
+const getAllowedAdminEmails = () => {
+  const raw = String(process.env.ADMIN_EMAILS || '').trim();
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((x) => String(x || '').trim().toLowerCase())
+    .filter(Boolean);
+};
+
+const verifyAdminJwt = (token) => {
+  const secret = String(process.env.ADMIN_JWT_SECRET || '').trim();
+  if (!secret) return null;
+  try {
+    const payload = jwt.verify(token, secret);
+    if (!payload || payload.typ !== 'admin') return null;
+    const email = String(payload.email || '').trim().toLowerCase();
+    if (!email) return null;
+    const allow = getAllowedAdminEmails();
+    if (allow.length > 0 && !allow.includes(email)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+};
+
 const adminAuth = (req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
-  const expected = String(process.env.ADMIN_TOKEN || '').trim();
-  if (!expected) return res.status(500).json({ success: false, message: 'ADMIN_TOKEN 未配置' });
-
   const auth = String(req.headers.authorization || '');
   const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length).trim() : '';
   const token = bearer || String(req.headers['x-admin-token'] || '').trim();
+  if (!token) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-  if (!token || token !== expected) return res.status(401).json({ success: false, message: 'Unauthorized' });
-  return next();
+  const expected = String(process.env.ADMIN_TOKEN || '').trim();
+  if (expected && token === expected) {
+    req.admin = { typ: 'token' };
+    return next();
+  }
+
+  const payload = verifyAdminJwt(token);
+  if (payload) {
+    req.admin = { typ: 'jwt', email: payload.email || '', name: payload.name || '', picture: payload.picture || '' };
+    return next();
+  }
+
+  const hasAnyAuthConfigured = Boolean(expected) || Boolean(String(process.env.ADMIN_JWT_SECRET || '').trim());
+  if (!hasAnyAuthConfigured) return res.status(500).json({ success: false, message: '未配置后台鉴权（ADMIN_TOKEN 或 ADMIN_JWT_SECRET）' });
+  return res.status(401).json({ success: false, message: 'Unauthorized' });
 };
 
-app.use('/api/admin', adminAuth);
+app.use('/api/admin', (req, res, next) => {
+  if (req.path && req.path.startsWith('/auth/')) return next();
+  return adminAuth(req, res, next);
+});
+
+app.post('/api/admin/auth/google', (req, res) => {
+  (async () => {
+    const googleClientId = String(process.env.GOOGLE_CLIENT_ID || '').trim();
+    const jwtSecret = String(process.env.ADMIN_JWT_SECRET || '').trim();
+    if (!googleClientId) return res.status(500).json({ success: false, message: 'GOOGLE_CLIENT_ID 未配置' });
+    if (!jwtSecret) return res.status(500).json({ success: false, message: 'ADMIN_JWT_SECRET 未配置' });
+
+    const allow = getAllowedAdminEmails();
+    if (allow.length === 0) return res.status(500).json({ success: false, message: 'ADMIN_EMAILS 未配置' });
+
+    const credential = String(req.body?.credential || '').trim();
+    if (!credential) return res.status(400).json({ success: false, message: '缺少 credential' });
+
+    const client = new OAuth2Client(googleClientId);
+    const ticket = await client.verifyIdToken({ idToken: credential, audience: googleClientId });
+    const payload = ticket.getPayload();
+
+    const email = String(payload?.email || '').trim().toLowerCase();
+    const emailVerified = payload?.email_verified === true;
+    if (!email || !emailVerified) return res.status(401).json({ success: false, message: 'Google 邮箱未验证或缺少邮箱' });
+    if (!allow.includes(email)) return res.status(403).json({ success: false, message: '账号未被授权访问后台' });
+
+    const token = jwt.sign(
+      { typ: 'admin', email, name: payload?.name || '', picture: payload?.picture || '' },
+      jwtSecret,
+      { expiresIn: '7d' }
+    );
+    return res.json({
+      success: true,
+      token,
+      admin: { email, name: payload?.name || '', picture: payload?.picture || '' },
+      updatedAt: dateNowIso(),
+    });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
+});
+
+app.get('/api/admin/auth/me', adminAuth, (req, res) => {
+  return res.json({ success: true, admin: req.admin || null, updatedAt: dateNowIso() });
+});
 
 app.post('/api/admin/upload/cover', upload.single('file'), async (req, res) => {
   try {

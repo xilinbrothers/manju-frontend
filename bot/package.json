@@ -13,6 +13,8 @@
     "cors": "^2.8.6",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
+    "google-auth-library": "^9.15.1",
+    "jsonwebtoken": "^9.0.2",
     "manju-bot-frontend": "file:..",
     "mongoose": "^8.18.1",
     "multer": "^2.0.0",
