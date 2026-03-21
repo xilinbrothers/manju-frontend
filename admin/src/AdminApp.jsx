@@ -10,6 +10,10 @@ import AdminManagement from './pages/AdminManagement';
 import FinanceCenter from './pages/FinanceCenter';
 import SystemSettings from './pages/SystemSettings';
 import AlertBar from './components/AlertBar';
+import Button from './components/ui/Button';
+import Card from './components/ui/Card';
+import PageHeader from './components/ui/PageHeader';
+import { apiFetchJson } from './utils/api';
 import './index.css';
 // import AdminLogin from './pages/AdminLogin';
 // import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -19,6 +23,10 @@ import './index.css';
 const AdminApp = () => {
   const [activeMenu, setActiveMenu] = useState('overview');
   const [appAlert, setAppAlert] = useState(null);
+  const [adminToken, setAdminToken] = useState(() => localStorage.getItem('admin_token') || '');
+  const [adminTokenInput, setAdminTokenInput] = useState(() => localStorage.getItem('admin_token') || '');
+  const [authError, setAuthError] = useState('');
+  const [isAuthChecking, setIsAuthChecking] = useState(false);
   React.useEffect(() => {
     document.documentElement.dataset.app = 'admin';
   }, []);
@@ -34,10 +42,76 @@ const AdminApp = () => {
   };
 
   const handleLogout = () => {
-    // setUser(null);
-    // setActiveMenu('overview');
-    setAppAlert({ type: 'warning', message: '当前为开发模式，已禁用退出功能' });
+    localStorage.removeItem('admin_token');
+    setAdminToken('');
+    setAdminTokenInput('');
+    setActiveMenu('overview');
+    setAppAlert({ type: 'success', message: '已退出后台' });
   };
+
+  if (!adminToken) {
+    return (
+      <div className="min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)] flex items-center justify-center p-8">
+        <Card className="w-full max-w-xl p-8">
+          <PageHeader title="后台鉴权" subtitle="请输入 ADMIN_TOKEN 后进入后台" />
+          {authError ? (
+            <div className="mt-5">
+              <AlertBar type="error" message={authError} onClose={() => setAuthError('')} />
+            </div>
+          ) : null}
+          <div className="mt-5 space-y-2">
+            <label className="text-sm font-bold text-slate-700">ADMIN_TOKEN</label>
+            <input
+              value={adminTokenInput}
+              onChange={(e) => setAdminTokenInput(e.target.value)}
+              placeholder="粘贴你的 ADMIN_TOKEN"
+              className="w-full h-11 bg-slate-100 border border-slate-200 rounded-xl px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            <div className="text-xs text-slate-500 font-medium">部署端需要配置同名环境变量 ADMIN_TOKEN</div>
+          </div>
+          <div className="mt-6 flex gap-2">
+            <Button
+              className="flex-1"
+              size="lg"
+              disabled={isAuthChecking}
+              onClick={async () => {
+                const t = String(adminTokenInput || '').trim();
+                if (!t) {
+                  setAuthError('请输入 ADMIN_TOKEN');
+                  return;
+                }
+                setAuthError('');
+                setIsAuthChecking(true);
+                localStorage.setItem('admin_token', t);
+                try {
+                  await apiFetchJson('/api/admin/settings');
+                  setAdminToken(t);
+                } catch (e) {
+                  localStorage.removeItem('admin_token');
+                  setAuthError(e?.message || '鉴权失败');
+                } finally {
+                  setIsAuthChecking(false);
+                }
+              }}
+            >
+              {isAuthChecking ? '验证中…' : '验证并进入'}
+            </Button>
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={() => {
+                localStorage.removeItem('admin_token');
+                setAdminTokenInput('');
+                setAuthError('');
+              }}
+            >
+              清空
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   /*
   if (!user) {

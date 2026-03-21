@@ -317,7 +317,12 @@ const SeriesManagement = ({ onAlert }) => {
     const fd = new FormData();
     fd.append('file', blob, 'cover.webp');
     const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}${path}`, { method: 'POST', body: fd });
+    const adminToken = localStorage.getItem('admin_token') || '';
+    const res = await fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      body: fd,
+      headers: adminToken ? { Authorization: `Bearer ${adminToken}` } : undefined,
+    });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.success) throw new Error(data?.message || `上传失败: ${res.status}`);
     return true;

@@ -6,11 +6,13 @@ export const getApiBaseUrl = () => {
 
 export const apiFetchJson = async (path, options = {}) => {
   const baseUrl = getApiBaseUrl();
+  const adminToken = localStorage.getItem('admin_token') || '';
   const res = await fetch(`${baseUrl}${path}`, {
     ...options,
     headers: {
       ...(options.headers || {}),
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
     },
   });
   if (!res.ok) {

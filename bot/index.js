@@ -200,6 +200,21 @@ const upload = multer({
   limits: { fileSize: 2 * 1024 * 1024 },
 });
 
+const adminAuth = (req, res, next) => {
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  const expected = String(process.env.ADMIN_TOKEN || '').trim();
+  if (!expected) return res.status(500).json({ success: false, message: 'ADMIN_TOKEN 未配置' });
+
+  const auth = String(req.headers.authorization || '');
+  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length).trim() : '';
+  const token = bearer || String(req.headers['x-admin-token'] || '').trim();
+
+  if (!token || token !== expected) return res.status(401).json({ success: false, message: 'Unauthorized' });
+  return next();
+};
+
+app.use('/api/admin', adminAuth);
+
 app.post('/api/admin/upload/cover', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
