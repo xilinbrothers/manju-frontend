@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetchJson, getApiBaseUrl } from '../utils/api';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import PageHeader from '../components/ui/PageHeader';
 
 const SeriesManagement = ({ onAlert }) => {
   const [view, setView] = useState('list'); // 'list' or 'edit'
@@ -372,7 +375,7 @@ const SeriesManagement = ({ onAlert }) => {
   };
 
   const renderList = () => (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <div className="relative w-[360px] max-w-[42vw] min-w-[220px]">
@@ -384,7 +387,8 @@ const SeriesManagement = ({ onAlert }) => {
           </div>
         </div>
 
-        <button
+        <Button
+          variant="neutral"
           onClick={() => {
             setEditingSeries(null);
             setDraft({
@@ -414,10 +418,9 @@ const SeriesManagement = ({ onAlert }) => {
             });
             setView('edit');
           }}
-          className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold transition-colors flex items-center"
         >
           新建漫剧
-        </button>
+        </Button>
       </div>
 
       <table className="w-full text-left">
@@ -483,13 +486,10 @@ const SeriesManagement = ({ onAlert }) => {
                 </span>
               </td>
               <td className="px-6 py-4 text-right">
-                <button 
-                  onClick={() => handleEdit(item)}
-                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm transition-colors mr-2"
-                >
-                  编辑
-                </button>
-                <button
+                <Button variant="secondary" size="sm" className="mr-2" onClick={() => handleEdit(item)}>编辑</Button>
+                <Button
+                  variant="danger"
+                  size="sm"
                   onClick={async () => {
                     if (!confirm('确认删除该剧集？')) return;
                     try {
@@ -499,16 +499,15 @@ const SeriesManagement = ({ onAlert }) => {
                       onAlert?.('error', e?.message || '删除失败');
                     }
                   }}
-                  className="h-9 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-sm transition-colors"
                 >
                   删除
-                </button>
+                </Button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 
   const renderEdit = () => (
@@ -523,7 +522,7 @@ const SeriesManagement = ({ onAlert }) => {
       />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className="lg:col-span-2 space-y-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+        <Card className="p-6 space-y-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <div className="text-base font-black text-slate-900">基本信息</div>
@@ -601,9 +600,9 @@ const SeriesManagement = ({ onAlert }) => {
               placeholder="请输入剧集简介..."
             ></textarea>
           </div>
-        </div>
+        </Card>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+        <Card className="p-6 space-y-6">
           <div className="space-y-1">
             <div className="text-base font-black text-slate-900">群组 / 频道绑定</div>
             <div className="text-xs text-slate-500 font-medium">用于支付后跳转与进群信息下发</div>
@@ -635,16 +634,18 @@ const SeriesManagement = ({ onAlert }) => {
               </p>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+      <Card className="p-6 space-y-6">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
             <div className="text-base font-black text-slate-900">分季配置</div>
             <div className="text-xs text-slate-500 font-medium">为该剧集配置各季信息与对应 VIP 群</div>
           </div>
-          <button
+          <Button
+            variant="neutral"
+            size="sm"
             onClick={() => {
               const next = [...(draft?.seasons || [])];
               next.push({
@@ -661,10 +662,9 @@ const SeriesManagement = ({ onAlert }) => {
               });
               setDraft((d) => ({ ...(d || {}), seasons: next }));
             }}
-            className="h-9 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold transition-colors"
           >
             + 添加分季
-          </button>
+          </Button>
         </div>
 
         {(draft?.seasons || []).length === 0 ? (
@@ -913,9 +913,9 @@ const SeriesManagement = ({ onAlert }) => {
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+      <Card className="p-6 space-y-6">
         <div className="space-y-1">
           <div className="text-base font-black text-slate-900">土豪专区（Super VIP）</div>
           <div className="text-xs text-slate-500 font-medium">全季订阅进入一个独立的土豪群</div>
@@ -1064,36 +1064,39 @@ const SeriesManagement = ({ onAlert }) => {
                     placeholder="价格"
                   />
                 </div>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     const nextPlans = [...(draft.superVip.plans || [])];
                     nextPlans.splice(idx, 1);
                     setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), plans: nextPlans } }));
                   }}
-                  className="text-rose-500 hover:text-rose-600 text-xs font-bold px-2"
+                  className="text-rose-600 border-rose-200 hover:bg-rose-50"
                 >
                   删除
-                </button>
+                </Button>
               </div>
             ))}
             {draft?.superVip?.planOverride ? (
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => {
                   const nextPlans = [...(draft.superVip.plans || [])];
                   nextPlans.push({ id: `plan_${Date.now()}`, label: '新套餐', days: 30, priceCny: 9.9, enabled: true });
                   setDraft((d) => ({ ...(d || {}), superVip: { ...(d?.superVip || {}), plans: nextPlans } }));
                 }}
-                className="text-amber-600 hover:text-amber-700 text-sm font-bold mt-2"
               >
                 + 添加全季套餐
-              </button>
+              </Button>
             ) : null}
           </div>
         </div>
-      </div>
+      </Card>
 
       <div className="space-y-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <Card className="p-6 space-y-4">
           <div className="space-y-1">
             <div className="text-base font-black text-slate-900">封面</div>
             <div className="text-xs text-slate-500 font-medium">要求 16:9，自动居中裁剪并压缩（建议至少 640×360）</div>
@@ -1126,10 +1129,12 @@ const SeriesManagement = ({ onAlert }) => {
               <div className="text-xs text-slate-600 font-medium mt-1">点击或拖拽图片</div>
             </div>
           </div>
-        </div>
+        </Card>
 
         <div className="flex flex-col space-y-3">
-          <button
+          <Button
+            size="lg"
+            className="w-full"
             onClick={async () => {
               try {
                 if (!draft?.title) {
@@ -1198,16 +1203,12 @@ const SeriesManagement = ({ onAlert }) => {
                 onAlert?.('error', e?.message || '保存失败');
               }
             }}
-            className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors"
           >
             保存修改
-          </button>
-          <button 
-            onClick={() => setView('list')}
-            className="w-full h-11 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-colors"
-          >
+          </Button>
+          <Button variant="ghost" size="lg" className="w-full" onClick={() => setView('list')}>
             取消
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -1216,20 +1217,11 @@ const SeriesManagement = ({ onAlert }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
-          <div className="text-xl font-black text-slate-900">剧集管理</div>
-          <div className="text-sm text-slate-500 font-medium">管理剧集信息、绑定群组与基础配置（示例数据）</div>
-        </div>
-        {view === 'edit' && (
-          <button
-            onClick={() => setView('list')}
-            className="h-10 px-4 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold transition-colors"
-          >
-            返回列表
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="剧集管理"
+        subtitle="管理剧集信息、绑定群组与基础配置（示例数据）"
+        right={view === 'edit' ? <Button variant="ghost" onClick={() => setView('list')}>返回列表</Button> : null}
+      />
 
       {view === 'list' ? renderList() : renderEdit()}
     </div>
