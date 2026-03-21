@@ -5,6 +5,14 @@ export const getApiBaseUrl = () => {
   return String(base).replace(/\/+$/, '');
 };
 
+export const resolveApiUrl = (url) => {
+  const s = String(url || '');
+  if (!s) return '';
+  if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('data:')) return s;
+  if (s.startsWith('/')) return `${getApiBaseUrl()}${s}`;
+  return s;
+};
+
 export const apiFetchJson = async (path, options = {}) => {
   try {
     const baseUrl = getApiBaseUrl();

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { apiFetchJson } from '../utils/api';
+import { apiFetchJson, resolveApiUrl } from '../utils/api';
 import AlertBar from '../components/AlertBar';
 import Card from '../components/ui/Card';
 import PaymentMethodSelector from '../components/PaymentMethodSelector';
@@ -55,7 +55,7 @@ const PlansPage = ({ series, targetType, seasonId, displayTitle, onSelectPlan, o
       <Card className="p-5 mb-8 flex space-x-4">
         <div className="w-24 h-24 rounded-[var(--app-radius-md)] overflow-hidden flex-shrink-0 border border-white/5 bg-black/10">
           <img 
-            src={series?.cover || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=640&h=360'} 
+            src={resolveApiUrl(series?.cover) || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=640&h=360'} 
             className="w-full h-full object-cover"
             alt=""
           />

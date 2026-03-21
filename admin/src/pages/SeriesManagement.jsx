@@ -325,7 +325,14 @@ const SeriesManagement = ({ onAlert }) => {
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.success) throw new Error(data?.message || `上传失败: ${res.status}`);
-    return true;
+    return String(data?.url || '');
+  };
+
+  const resolveMediaUrl = (v) => {
+    const s = String(v || '');
+    if (!s) return '';
+    if (s.startsWith('/')) return `${getApiBaseUrl()}${s}`;
+    return s;
   };
 
   const onPickCover = async (file) => {
@@ -333,14 +340,15 @@ const SeriesManagement = ({ onAlert }) => {
     try {
       setIsUploadingCover(true);
       const blob = await imageFileToCoverBlob(file);
-      const url = await blobToDataUrl(blob);
+      const previewUrl = await blobToDataUrl(blob);
+      let remoteUrl = '';
       if (editingSeries?.id) {
-        await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(editingSeries.id)}/cover`, blob);
+        remoteUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(editingSeries.id)}/cover`, blob);
       } else {
         const created = await ensureDraftSeries();
-        await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(created.id)}/cover`, blob);
+        remoteUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(created.id)}/cover`, blob);
       }
-      setDraft((d) => ({ ...(d || {}), cover: url }));
+      setDraft((d) => ({ ...(d || {}), cover: remoteUrl || previewUrl }));
     } catch (e) {
       onAlert?.('error', e?.message || '封面上传失败');
     } finally {
@@ -355,19 +363,20 @@ const SeriesManagement = ({ onAlert }) => {
     try {
       setIsUploadingSeasonCover(true);
       const blob = await imageFileToSeasonCoverBlob(file);
-      const url = await blobToDataUrl(blob);
+      const previewUrl = await blobToDataUrl(blob);
+      let remoteUrl = '';
       const sid = String(draft?.seasons?.[seasonCoverPickIndex]?.seasonId || '').trim();
       if (!sid) throw new Error('请先填写 seasonId 再上传剧照');
       if (editingSeries?.id) {
-        await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(editingSeries.id)}/seasons/${encodeURIComponent(sid)}/cover`, blob);
+        remoteUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(editingSeries.id)}/seasons/${encodeURIComponent(sid)}/cover`, blob);
       } else {
         const created = await ensureDraftSeries();
-        await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(created.id)}/seasons/${encodeURIComponent(sid)}/cover`, blob);
+        remoteUrl = await uploadWebpToApi(`/api/admin/series/${encodeURIComponent(created.id)}/seasons/${encodeURIComponent(sid)}/cover`, blob);
       }
       setDraft((d) => {
         const seasons = [...((d?.seasons || []))];
         if (!seasons[seasonCoverPickIndex]) return d;
-        seasons[seasonCoverPickIndex] = { ...seasons[seasonCoverPickIndex], cover: url };
+        seasons[seasonCoverPickIndex] = { ...seasons[seasonCoverPickIndex], cover: remoteUrl || previewUrl };
         return { ...(d || {}), seasons };
       });
     } catch (e) {
@@ -743,7 +752,7 @@ const SeriesManagement = ({ onAlert }) => {
                     <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 flex-shrink-0">
-                          {s.cover ? <img src={s.cover} alt="season-cover" className="h-full w-full object-cover" /> : null}
+                          {s.cover ? <img src={resolveMediaUrl(s.cover)} alt="season-cover" className="h-full w-full object-cover" /> : null}
                         </div>
                         <div className="min-w-0">
                           <div className="text-xs text-slate-500 font-semibold truncate">{s.cover ? '已上传' : '未上传'}</div>
@@ -1127,7 +1136,7 @@ const SeriesManagement = ({ onAlert }) => {
             }}
           >
             {draft?.cover ? (
-              <img src={draft.cover} alt="cover" className="absolute inset-0 h-full w-full object-cover" />
+              <img src={resolveMediaUrl(draft.cover)} alt="cover" className="absolute inset-0 h-full w-full object-cover" />
             ) : null}
             <div className={`relative text-center ${draft?.cover ? 'bg-white/80 border border-white/60' : ''} rounded-xl px-4 py-3`}>
               <div className="text-slate-700 font-black">{isUploadingCover ? '上传中…' : draft?.cover ? '更换封面' : '上传封面'}</div>

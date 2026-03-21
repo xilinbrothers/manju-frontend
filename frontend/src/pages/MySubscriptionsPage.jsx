@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { apiFetchJson } from '../utils/api';
+import { apiFetchJson, resolveApiUrl } from '../utils/api';
 import AlertBar from '../components/AlertBar';
 import BottomNav from '../components/BottomNav';
 import Card from '../components/ui/Card';
@@ -140,7 +140,7 @@ const MySubscriptionsPage = ({ onNavigate, onRenew, onAlert }) => {
             
             <div className="flex space-x-4 mb-5">
               <div className="w-20 h-20 rounded-[var(--app-radius-md)] overflow-hidden flex-shrink-0 border border-white/5 bg-black/10">
-                <img src={sub.cover} className="w-full h-full object-cover" alt="" />
+                <img src={resolveApiUrl(sub.cover)} className="w-full h-full object-cover" alt="" />
               </div>
               <div className="flex-1 flex flex-col justify-center">
                 <div className="flex justify-between items-start">
@@ -213,7 +213,7 @@ const MySubscriptionsPage = ({ onNavigate, onRenew, onAlert }) => {
               onClick={() => onRenew?.(sub.seriesId)}
             >
               <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 grayscale">
-                <img src={sub.cover} className="w-full h-full object-cover" alt="" />
+                <img src={resolveApiUrl(sub.cover)} className="w-full h-full object-cover" alt="" />
               </div>
               <div className="flex-1">
                 <h3 className="text-[14px] font-bold text-white/85">{sub.title}</h3>

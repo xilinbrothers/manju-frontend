@@ -200,6 +200,35 @@ const upload = multer({
   limits: { fileSize: 2 * 1024 * 1024 },
 });
 
+const parseImageDataUrl = (s) => {
+  const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/.exec(String(s || '').trim());
+  if (!m) return null;
+  return { mime: m[1], base64: m[2] };
+};
+
+const saveImageBufferToUploads = (buffer, mime, namePrefix) => {
+  const okTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+  const mt = String(mime || '').toLowerCase();
+  if (!okTypes.has(mt)) throw new Error('仅支持 JPG/PNG/WEBP');
+  const coverDir = path.join(UPLOADS_DIR, 'covers');
+  fs.mkdirSync(coverDir, { recursive: true });
+  const ext = mt === 'image/png' ? 'png' : mt === 'image/webp' ? 'webp' : 'jpg';
+  const safePrefix = String(namePrefix || 'img').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 48);
+  const name = `${safePrefix}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}.${ext}`;
+  fs.writeFileSync(path.join(coverDir, name), buffer);
+  return `/uploads/covers/${name}`;
+};
+
+const normalizeCoverValueForStorage = (coverValue, namePrefix) => {
+  const raw = String(coverValue || '').trim();
+  if (!raw) return '';
+  if (!raw.startsWith('data:')) return raw;
+  const parsed = parseImageDataUrl(raw);
+  if (!parsed) return raw;
+  const buf = Buffer.from(parsed.base64, 'base64');
+  return saveImageBufferToUploads(buf, parsed.mime, namePrefix);
+};
+
 const adminAuth = (req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   const expected = String(process.env.ADMIN_TOKEN || '').trim();
@@ -488,23 +517,22 @@ app.post('/api/admin/series/:id/cover', upload.single('file'), (req, res) => {
     if (!id) return res.status(400).json({ success: false, message: '参数缺失' });
     const file = req.file;
     if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
-    if (file.mimetype !== 'image/webp') return res.status(400).json({ success: false, message: '仅支持 WEBP（请重新上传）' });
-    const cover = `data:image/webp;base64,${file.buffer.toString('base64')}`;
+    const url = saveImageBufferToUploads(file.buffer, file.mimetype, `series_${id}_cover`);
 
     if (mongoReady) {
       const prev = await Series.findOne({ id }).lean();
       if (!prev) return res.status(404).json({ success: false, message: '剧集不存在' });
-      await Series.updateOne({ id }, { $set: { cover } });
-      return res.json({ success: true, updatedAt: dateNowIso() });
+      await Series.updateOne({ id }, { $set: { cover: url } });
+      return res.json({ success: true, url, updatedAt: dateNowIso() });
     }
 
     const store = loadStore();
     const idx = (store.series || []).findIndex((s) => String(s?.id || '') === id);
     if (idx < 0) return res.status(404).json({ success: false, message: '剧集不存在' });
     const nextSeries = [...(store.series || [])];
-    nextSeries[idx] = { ...(nextSeries[idx] || {}), cover };
+    nextSeries[idx] = { ...(nextSeries[idx] || {}), cover: url };
     const next = saveStore({ ...store, series: nextSeries });
-    return res.json({ success: true, updatedAt: next.updatedAt });
+    return res.json({ success: true, url, updatedAt: next.updatedAt });
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
 
@@ -516,8 +544,7 @@ app.post('/api/admin/series/:id/seasons/:seasonId/cover', upload.single('file'),
     if (!id || !seasonId) return res.status(400).json({ success: false, message: '参数缺失' });
     const file = req.file;
     if (!file) return res.status(400).json({ success: false, message: '缺少文件' });
-    if (file.mimetype !== 'image/webp') return res.status(400).json({ success: false, message: '仅支持 WEBP（请重新上传）' });
-    const cover = `data:image/webp;base64,${file.buffer.toString('base64')}`;
+    const url = saveImageBufferToUploads(file.buffer, file.mimetype, `series_${id}_season_${seasonId}_cover`);
 
     if (mongoReady) {
       const prev = await Series.findOne({ id }).lean();
@@ -538,15 +565,15 @@ app.post('/api/admin/series/:id/seasons/:seasonId/cover', upload.single('file'),
                 sort: 0,
                 planOverride: false,
                 plans: [],
-                cover,
+                cover: url,
               },
             },
           }
         );
-        return res.json({ success: true, updatedAt: dateNowIso() });
+        return res.json({ success: true, url, updatedAt: dateNowIso() });
       }
-      await Series.updateOne({ id, 'seasons.seasonId': seasonId }, { $set: { 'seasons.$.cover': cover } });
-      return res.json({ success: true, updatedAt: dateNowIso() });
+      await Series.updateOne({ id, 'seasons.seasonId': seasonId }, { $set: { 'seasons.$.cover': url } });
+      return res.json({ success: true, url, updatedAt: dateNowIso() });
     }
 
     const store = loadStore();
@@ -556,18 +583,18 @@ app.post('/api/admin/series/:id/seasons/:seasonId/cover', upload.single('file'),
     const seasons = Array.isArray(prev.seasons) ? prev.seasons : [];
     const sidx = seasons.findIndex((s) => String(s?.seasonId || '') === seasonId);
     if (sidx < 0) {
-      const nextSeasons = [...seasons, { seasonId, enabled: false, title: '', introTitle: '', introText: '', vipGroupId: '', sort: 0, planOverride: false, plans: [], cover }];
+      const nextSeasons = [...seasons, { seasonId, enabled: false, title: '', introTitle: '', introText: '', vipGroupId: '', sort: 0, planOverride: false, plans: [], cover: url }];
       const nextSeries = [...(store.series || [])];
       nextSeries[idx] = { ...prev, seasons: nextSeasons };
       const next = saveStore({ ...store, series: nextSeries });
-      return res.json({ success: true, updatedAt: next.updatedAt });
+      return res.json({ success: true, url, updatedAt: next.updatedAt });
     }
     const nextSeasons = [...seasons];
-    nextSeasons[sidx] = { ...(nextSeasons[sidx] || {}), cover };
+    nextSeasons[sidx] = { ...(nextSeasons[sidx] || {}), cover: url };
     const nextSeries = [...(store.series || [])];
     nextSeries[idx] = { ...prev, seasons: nextSeasons };
     const next = saveStore({ ...store, series: nextSeries });
-    return res.json({ success: true, updatedAt: next.updatedAt });
+    return res.json({ success: true, url, updatedAt: next.updatedAt });
   })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
 
@@ -870,12 +897,20 @@ app.post('/api/admin/series', (req, res) => {
     const check = validateSeriesConfig(body);
     if (!check.ok) return res.status(400).json({ success: false, message: check.message || '配置不合法' });
     const id = body.id || `series_${Date.now()}`;
+    const incomingSeasons = Array.isArray(body.seasons) ? body.seasons : [];
+    const normalizedSeasons = incomingSeasons.map((s, idx) => {
+      const sid = String(s?.seasonId || '').trim() || `s${idx + 1}`;
+      if (s && typeof s === 'object' && 'cover' in s) {
+        return { ...s, cover: normalizeCoverValueForStorage(s.cover, `series_${id}_season_${sid}`) };
+      }
+      return s;
+    });
     const item = {
       id,
       title: body.title || '未命名剧集',
       isDraft: false,
       description: body.description || '',
-      cover: body.cover || '',
+      cover: normalizeCoverValueForStorage(body.cover, `series_${id}`) || '',
       status: body.status || '连载中',
       total: Number(body.total || 0) || 0,
       category: body.category || '',
@@ -884,7 +919,7 @@ app.post('/api/admin/series', (req, res) => {
       vipGroupId: body.vipGroupId || '',
       planOverride: Boolean(body.planOverride),
       plans: Array.isArray(body.plans) ? body.plans : [],
-      seasons: mergeSeasonsPreserveCover([], Array.isArray(body.seasons) ? body.seasons : []),
+      seasons: mergeSeasonsPreserveCover([], normalizedSeasons),
       superVip: body.superVip && typeof body.superVip === 'object' ? body.superVip : {},
     };
 
@@ -909,6 +944,18 @@ app.put('/api/admin/series/:id', (req, res) => {
     const body = req.body || {};
     const check = validateSeriesConfig(body);
     if (!check.ok) return res.status(400).json({ success: false, message: check.message || '配置不合法' });
+    const incomingSeasons = Array.isArray(body.seasons) ? body.seasons : null;
+    const normalizedSeasons =
+      incomingSeasons === null
+        ? null
+        : incomingSeasons.map((s, idx) => {
+            const sid = String(s?.seasonId || '').trim() || `s${idx + 1}`;
+            if (s && typeof s === 'object' && 'cover' in s) {
+              return { ...s, cover: normalizeCoverValueForStorage(s.cover, `series_${id}_season_${sid}`) };
+            }
+            return s;
+          });
+    const normalizedCover = body.cover !== undefined ? normalizeCoverValueForStorage(body.cover, `series_${id}`) : undefined;
 
     if (mongoReady) {
       const prev = await Series.findOne({ id }).lean();
@@ -918,7 +965,7 @@ app.put('/api/admin/series/:id', (req, res) => {
         title: body.title !== undefined ? body.title : prev.title,
         isDraft: false,
         description: body.description !== undefined ? body.description : prev.description,
-        cover: body.cover !== undefined ? body.cover : prev.cover,
+        cover: normalizedCover !== undefined ? normalizedCover : prev.cover,
         status: body.status !== undefined ? body.status : prev.status,
         total: body.total !== undefined ? Number(body.total || 0) : prev.total,
         category: body.category !== undefined ? body.category : prev.category,
@@ -927,7 +974,7 @@ app.put('/api/admin/series/:id', (req, res) => {
         vipGroupId: body.vipGroupId !== undefined ? body.vipGroupId : prev.vipGroupId,
         planOverride: body.planOverride !== undefined ? Boolean(body.planOverride) : prev.planOverride,
         plans: Array.isArray(body.plans) ? body.plans : prev.plans,
-        seasons: mergeSeasonsPreserveCover(prev.seasons, Array.isArray(body.seasons) ? body.seasons : prev.seasons),
+        seasons: mergeSeasonsPreserveCover(prev.seasons, normalizedSeasons !== null ? normalizedSeasons : prev.seasons),
         superVip: body.superVip && typeof body.superVip === 'object' ? body.superVip : prev.superVip,
       };
       await Series.updateOne({ id }, { $set: nextItem });
@@ -944,7 +991,7 @@ app.put('/api/admin/series/:id', (req, res) => {
       title: body.title !== undefined ? body.title : prev.title,
       isDraft: false,
       description: body.description !== undefined ? body.description : prev.description,
-      cover: body.cover !== undefined ? body.cover : prev.cover,
+      cover: normalizedCover !== undefined ? normalizedCover : prev.cover,
       status: body.status !== undefined ? body.status : prev.status,
       total: body.total !== undefined ? Number(body.total || 0) : prev.total,
       category: body.category !== undefined ? body.category : prev.category,
@@ -953,7 +1000,7 @@ app.put('/api/admin/series/:id', (req, res) => {
       vipGroupId: body.vipGroupId !== undefined ? body.vipGroupId : prev.vipGroupId,
       planOverride: body.planOverride !== undefined ? Boolean(body.planOverride) : prev.planOverride,
       plans: Array.isArray(body.plans) ? body.plans : prev.plans,
-      seasons: mergeSeasonsPreserveCover(prev.seasons, Array.isArray(body.seasons) ? body.seasons : prev.seasons),
+      seasons: mergeSeasonsPreserveCover(prev.seasons, normalizedSeasons !== null ? normalizedSeasons : prev.seasons),
       superVip: body.superVip && typeof body.superVip === 'object' ? body.superVip : prev.superVip,
     };
     const nextSeries = [...store.series];
@@ -976,6 +1023,58 @@ app.delete('/api/admin/series/:id', (req, res) => {
     const next = saveStore({ ...store, series: nextSeries });
     return res.json({ success: true, updatedAt: next.updatedAt });
   })().catch(() => res.status(500).json({ success: false, message: 'server_error' }));
+});
+
+app.post('/api/admin/migrate/covers', (req, res) => {
+  (async () => {
+    if (HAS_MONGO_URI && !mongoReady) return res.status(503).json({ success: false, message: 'db_unavailable' });
+    const body = req.body || {};
+    if (body.confirm !== true) return res.status(400).json({ success: false, message: '需要 confirm=true' });
+
+    let seriesCoverConverted = 0;
+    let seasonCoverConverted = 0;
+
+    const migrateSeries = (item) => {
+      const sid = String(item?.id || '').trim() || `series_${Date.now()}`;
+      let changed = false;
+      const next = { ...(item || {}) };
+      const nextCover = normalizeCoverValueForStorage(next.cover, `series_${sid}`);
+      if (nextCover !== next.cover) {
+        next.cover = nextCover;
+        changed = true;
+        seriesCoverConverted += 1;
+      }
+      const seasons = Array.isArray(next.seasons) ? next.seasons : [];
+      const nextSeasons = seasons.map((s, idx) => {
+        if (!s || typeof s !== 'object' || !('cover' in s)) return s;
+        const seasonId = String(s?.seasonId || '').trim() || `s${idx + 1}`;
+        const nc = normalizeCoverValueForStorage(s.cover, `series_${sid}_season_${seasonId}`);
+        if (nc !== s.cover) {
+          seasonCoverConverted += 1;
+          changed = true;
+          return { ...s, cover: nc };
+        }
+        return s;
+      });
+      if (changed) next.seasons = nextSeasons;
+      return { changed, next };
+    };
+
+    if (mongoReady) {
+      const items = await Series.find({}).lean();
+      for (const it of items) {
+        const { changed, next } = migrateSeries(it);
+        if (changed) await Series.updateOne({ id: it.id }, { $set: { cover: next.cover, seasons: next.seasons } });
+      }
+      return res.json({ success: true, seriesCoverConverted, seasonCoverConverted, updatedAt: dateNowIso() });
+    }
+
+    const store = loadStore();
+    const list = Array.isArray(store.series) ? store.series : [];
+    const nextList = list.map((it) => migrateSeries(it).next);
+    const next = saveStore({ ...store, series: nextList });
+    return res.json({ success: true, seriesCoverConverted, seasonCoverConverted, updatedAt: next.updatedAt });
+  })().catch((e) => res.status(500).json({ success: false, message: e?.message || 'server_error' }));
 });
 
 app.get('/api/admin/settings', (req, res) => {
