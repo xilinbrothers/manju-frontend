@@ -12,6 +12,7 @@ const AdminLayout = ({ children, activeMenu, onMenuChange, user, onLogout }) => 
         { id: 'series', label: '剧集管理', icon: '🎬' },
         { id: 'plans', label: '套餐 & 定价', icon: '💰' },
         { id: 'users', label: '用户 & 订阅', icon: '👥' },
+        { id: 'orders', label: '订单与支付', icon: '🧾' },
         { id: 'finance', label: '财务中心', icon: '💹' },
       ],
     },
@@ -38,8 +39,8 @@ const AdminLayout = ({ children, activeMenu, onMenuChange, user, onLogout }) => 
   }
 
   return (
-    <div className="flex min-h-dvh w-full bg-white text-slate-900">
-      <aside className="w-[240px] shrink-0 bg-white border-r border-slate-200 min-h-dvh flex flex-col">
+    <div className="flex min-h-dvh w-full bg-[var(--app-bg)] text-[var(--app-fg)]">
+      <aside className="w-[248px] shrink-0 bg-[var(--app-card)] border-r border-[color:var(--app-border)] min-h-dvh flex flex-col">
         <div className="px-5 py-5">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-lg bg-slate-900 flex items-center justify-center text-white font-black">
@@ -53,7 +54,7 @@ const AdminLayout = ({ children, activeMenu, onMenuChange, user, onLogout }) => 
         </div>
 
         <div className="px-3 pb-4">
-          <div className="h-px bg-slate-200"></div>
+          <div className="h-px bg-[color:var(--app-border)]"></div>
         </div>
 
         <nav className="flex-1 px-3 pb-6 overflow-y-auto">
@@ -86,8 +87,8 @@ const AdminLayout = ({ children, activeMenu, onMenuChange, user, onLogout }) => 
           </div>
         </nav>
 
-        <div className="p-4 border-t border-slate-200 bg-white">
-          <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-3 py-3 border border-slate-200">
+        <div className="p-4 border-t border-[color:var(--app-border)] bg-[var(--app-card)]">
+          <div className="flex items-center gap-3 rounded-2xl bg-[var(--app-bg)] px-3 py-3 border border-[color:var(--app-border)]">
             {user?.avatar ? (
               <img src={user.avatar} alt="avatar" className="h-9 w-9 rounded-full object-cover" />
             ) : (
@@ -102,7 +103,7 @@ const AdminLayout = ({ children, activeMenu, onMenuChange, user, onLogout }) => 
             <button
               type="button"
               onClick={onLogout}
-              className="h-9 w-9 rounded-xl bg-white hover:bg-slate-100 text-slate-700 transition-colors flex items-center justify-center border border-slate-200"
+              className="h-9 w-9 rounded-xl bg-white hover:bg-slate-100 text-slate-700 transition-colors flex items-center justify-center border border-[color:var(--app-border)]"
               title="退出登录"
             >
               ⎋
@@ -111,11 +112,8 @@ const AdminLayout = ({ children, activeMenu, onMenuChange, user, onLogout }) => 
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 bg-slate-50">
-        <div className="mx-auto w-full max-w-[1200px] px-8 py-8">
-          <div className="mb-6">
-            <div className="text-xl font-black text-slate-900">{menuLabelMap[activeMenu] || '管理后台'}</div>
-          </div>
+      <main className="flex-1 min-w-0 bg-[var(--app-bg)]">
+        <div className="mx-auto w-full max-w-[var(--app-page-max)] px-[var(--app-gutter)] py-7">
           {children}
         </div>
       </main>

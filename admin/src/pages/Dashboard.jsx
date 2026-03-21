@@ -102,7 +102,7 @@ const Dashboard = () => {
   }, [dailyStats, seriesMap]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <PageHeader
         title="概览"
         subtitle="仪表盘"
@@ -123,11 +123,11 @@ const Dashboard = () => {
         <AlertBar type="error" message={error} />
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
         {stats.map((stat) => (
-          <Card key={stat.label} className="p-5">
+          <Card key={stat.label} className="p-6">
             <div className="flex items-center justify-between">
-              <div className="h-11 w-11 rounded-2xl bg-slate-900 flex items-center justify-center text-white text-xl">
+              <div className={`h-11 w-11 rounded-2xl bg-gradient-to-br ${stat.tone} flex items-center justify-center text-white text-xl shadow-sm`}>
                 {stat.icon}
               </div>
               <div className="text-xs font-black text-slate-500 bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg">实时</div>
@@ -138,7 +138,7 @@ const Dashboard = () => {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">

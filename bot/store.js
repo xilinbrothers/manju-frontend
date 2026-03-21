@@ -43,6 +43,8 @@ const defaultStore = () => ({
   users: {},
   orders: {},
   payments: {},
+  paymentAttempts: {},
+  paymentEvents: {},
 });
 
 const loadStore = () => {

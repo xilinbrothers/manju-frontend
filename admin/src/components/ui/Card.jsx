@@ -3,7 +3,7 @@ import React from 'react';
 const Card = ({ className = '', children }) => {
   return (
     <div
-      className={`bg-[var(--app-card)] border border-[color:var(--app-border)] rounded-[var(--app-radius-lg)] shadow-[var(--app-shadow)] ${className}`}
+      className={`bg-[var(--app-card)] border border-[color:var(--app-border)] rounded-[var(--app-radius-lg)] shadow-[var(--app-shadow-sm)] ${className}`}
     >
       {children}
     </div>
@@ -11,4 +11,3 @@ const Card = ({ className = '', children }) => {
 };
 
 export default Card;
-

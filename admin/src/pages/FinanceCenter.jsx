@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetchJson } from '../utils/api';
+import Card from '../components/ui/Card';
 
 const FinanceCenter = () => {
   const [rangeDays, setRangeDays] = useState(30);
@@ -57,8 +58,8 @@ const FinanceCenter = () => {
   }, [lastDaily, seriesMap]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
+    <div className="space-y-7">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div className="space-y-1">
           <div className="text-sm text-slate-500 font-semibold">财务中心</div>
           <div className="text-lg font-black text-slate-900">流水与趋势</div>
@@ -85,31 +86,31 @@ const FinanceCenter = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+        <Card className="p-6">
           <div className="text-xs font-bold text-slate-500">累计收入</div>
           <div className="mt-2 text-2xl font-black text-slate-900">￥{totalRevenue.toFixed(2)}</div>
           <div className="mt-2 text-xs text-slate-500 font-semibold">支付成功订单：{totalOrders}</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+        </Card>
+        <Card className="p-6">
           <div className="text-xs font-bold text-slate-500">支付宝收入</div>
           <div className="mt-2 text-2xl font-black text-slate-900">￥{Number(alipay.amountCny || 0).toFixed(2)}</div>
           <div className="mt-2 text-xs text-slate-500 font-semibold">支付宝订单：{Number(alipay.orders || 0) || 0}</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+        </Card>
+        <Card className="p-6">
           <div className="text-xs font-bold text-slate-500">平均订单金额</div>
           <div className="mt-2 text-2xl font-black text-slate-900">￥{avg.toFixed(2)}</div>
           <div className="mt-2 text-xs text-slate-500 font-semibold">按历史支付成功订单计算</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+        </Card>
+        <Card className="p-6">
           <div className="text-xs font-bold text-slate-500">最近统计日期</div>
           <div className="mt-2 text-2xl font-black text-slate-900">{lastDaily?.date || '--'}</div>
           <div className="mt-2 text-xs text-slate-500 font-semibold">可在系统设置重算今日统计</div>
-        </div>
+        </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <div className="text-base font-black text-slate-900">每日流水</div>
@@ -132,9 +133,9 @@ const FinanceCenter = () => {
               ))
             )}
           </div>
-        </div>
+        </Card>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <Card className="p-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <div className="text-base font-black text-slate-900">单漫剧流水</div>
@@ -169,7 +170,7 @@ const FinanceCenter = () => {
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );

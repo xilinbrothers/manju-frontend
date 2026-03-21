@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import SeriesManagement from './pages/SeriesManagement';
 import PlansPricing from './pages/PlansPricing';
 import UserSubscription from './pages/UserSubscription';
+import OrdersPayments from './pages/OrdersPayments';
 import PaymentConfig from './pages/PaymentConfig';
 import CopywritingConfig from './pages/CopywritingConfig';
 import AdminManagement from './pages/AdminManagement';
@@ -54,21 +55,10 @@ const AdminApp = () => {
   };
 
   if (!adminToken) {
-    if (!GOOGLE_CLIENT_ID) {
-      return (
-        <div className="min-h-screen bg-[var(--app-bg)] text-[var(--app-fg)] flex items-center justify-center p-8">
-          <Card className="w-full max-w-xl p-8">
-            <div className="text-xl font-black text-slate-900">后台登录未配置</div>
-            <div className="mt-2 text-sm text-slate-600 font-medium leading-relaxed">
-              请在环境变量中配置 <span className="font-black">VITE_GOOGLE_CLIENT_ID</span>（Google OAuth Client ID）。
-            </div>
-          </Card>
-        </div>
-      );
-    }
-    return (
-      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+    const login = (
+      <>
         <AdminLogin
+          googleEnabled={Boolean(GOOGLE_CLIENT_ID)}
           onLoginSuccess={handleLoginSuccess}
           onTokenLogin={async () => {
             try {
@@ -87,8 +77,14 @@ const AdminApp = () => {
             <AlertBar type="error" message={authBootError} onClose={() => setAuthBootError('')} />
           </div>
         ) : null}
-      </GoogleOAuthProvider>
+      </>
     );
+
+    if (GOOGLE_CLIENT_ID) {
+      return <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{login}</GoogleOAuthProvider>;
+    }
+
+    return login;
   }
 
   React.useEffect(() => {
@@ -128,6 +124,8 @@ const AdminApp = () => {
         return <PlansPricing onAlert={(type, message) => setAppAlert({ type, message })} />;
       case 'users':
         return <UserSubscription />;
+      case 'orders':
+        return <OrdersPayments />;
       case 'finance':
         return <FinanceCenter />;
       case 'payment':

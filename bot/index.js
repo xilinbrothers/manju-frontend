@@ -16,6 +16,8 @@ const Series = require('./models/Series');
 const User = require('./models/User');
 const Order = require('./models/Order');
 const Payment = require('./models/Payment');
+const PaymentAttempt = require('./models/PaymentAttempt');
+const PaymentEvent = require('./models/PaymentEvent');
 const DailyStat = require('./models/DailyStat');
 const AdminAudit = require('./models/AdminAudit');
 const {
@@ -262,6 +264,81 @@ const appendAdminAudit = async (req, action, target, meta, overrideAdmin) => {
   }
 };
 
+const normalizeGatewayStatus = (raw) => {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (s === 'success' || s === 'paid' || s === '2') return { raw: String(raw ?? ''), normalized: 'paid' };
+  if (s === '1') return { raw: String(raw ?? ''), normalized: 'paying' };
+  if (s === '0') return { raw: String(raw ?? ''), normalized: 'created' };
+  if (s === '-1' || s === 'fail' || s === 'failed') return { raw: String(raw ?? ''), normalized: 'failed' };
+  return { raw: String(raw ?? ''), normalized: '' };
+};
+
+const parseAmountToFen = (amount, expectedFen) => {
+  const raw = String(amount ?? '').trim();
+  if (!raw) return 0;
+  const hasDot = raw.includes('.');
+  const parseYuanToFen = (yuanStr) => {
+    const s = String(yuanStr || '').trim();
+    if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+    const [a, b = ''] = s.split('.');
+    const fen = Number(a) * 100 + Number((b + '00').slice(0, 2));
+    if (!Number.isFinite(fen)) return null;
+    return fen;
+  };
+  if (hasDot) {
+    const fen = parseYuanToFen(raw);
+    return fen === null ? 0 : fen;
+  }
+  if (!/^\d+$/.test(raw)) return 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  const asFen = n;
+  const asYuan = n * 100;
+  if (Number.isFinite(expectedFen) && expectedFen > 0) {
+    if (asFen === expectedFen) return asFen;
+    if (asYuan === expectedFen) return asYuan;
+  }
+  return asYuan;
+};
+
+const newId = (prefix) => `${String(prefix || 'id')}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+
+const appendPaymentEvent = async (evt) => {
+  const nowIso = dateNowIso();
+  const item = {
+    id: evt?.id || newId('pe'),
+    orderId: String(evt?.orderId || ''),
+    paymentAttemptId: String(evt?.paymentAttemptId || ''),
+    method: String(evt?.method || 'alipay'),
+    type: String(evt?.type || ''),
+    upstreamOrderNo: String(evt?.upstreamOrderNo || ''),
+    statusRaw: String(evt?.statusRaw || ''),
+    statusNormalized: String(evt?.statusNormalized || ''),
+    amountFen: Number(evt?.amountFen || 0) || 0,
+    currency: String(evt?.currency || 'CNY'),
+    signValid: evt?.signValid !== false,
+    httpStatus: Number(evt?.httpStatus || 0) || 0,
+    errorCode: String(evt?.errorCode || ''),
+    errorMessage: String(evt?.errorMessage || ''),
+    payload: evt?.payload && typeof evt.payload === 'object' ? evt.payload : null,
+    atIso: String(evt?.atIso || nowIso),
+  };
+
+  if (mongoReady) {
+    await PaymentEvent.create(item);
+    return item;
+  }
+  const store = loadStore();
+  const next = saveStore({
+    ...store,
+    paymentEvents: {
+      ...(store.paymentEvents || {}),
+      [item.id]: item,
+    },
+  });
+  return { ...item, updatedAt: next.updatedAt };
+};
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 },
@@ -430,6 +507,91 @@ app.get('/api/admin/audit', async (req, res) => {
       .filter(Boolean)
       .reverse();
     return res.json({ success: true, items, updatedAt: dateNowIso() });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e?.message || 'server_error' });
+  }
+});
+
+app.get('/api/admin/orders', async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(200, Number(req.query?.limit || 50) || 50));
+    const offset = Math.max(0, Number(req.query?.offset || 0) || 0);
+    const q = String(req.query?.q || '').trim();
+    const orderId = String(req.query?.orderId || '').trim();
+    const upstreamOrderNo = String(req.query?.upstreamOrderNo || '').trim();
+    const telegramId = String(req.query?.telegramId || '').trim();
+    const status = String(req.query?.status || '').trim();
+    const paymentMethod = String(req.query?.paymentMethod || '').trim();
+
+    if (mongoReady) {
+      const cond = {};
+      if (orderId) cond.id = orderId;
+      if (upstreamOrderNo) cond.upstreamOrderNo = upstreamOrderNo;
+      if (telegramId) cond.telegramId = telegramId;
+      if (status) cond.status = status;
+      if (paymentMethod) cond.paymentMethod = paymentMethod;
+      if (q && !orderId && !upstreamOrderNo && !telegramId) {
+        cond.$or = [{ id: q }, { upstreamOrderNo: q }, { telegramId: q }];
+      }
+      const total = await Order.countDocuments(cond);
+      const items = await Order.find(cond)
+        .sort({ createdAtIso: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean();
+      return res.json({ success: true, total, items, updatedAt: dateNowIso() });
+    }
+
+    const store = loadStore();
+    const list = Object.values(store.orders || {});
+    const matched = list.filter((o) => {
+      if (!o) return false;
+      if (orderId && String(o.id || '') !== orderId) return false;
+      if (upstreamOrderNo && String(o.upstreamOrderNo || '') !== upstreamOrderNo) return false;
+      if (telegramId && String(o.telegramId || '') !== telegramId) return false;
+      if (status && String(o.status || '') !== status) return false;
+      if (paymentMethod && String(o.paymentMethod || '') !== paymentMethod) return false;
+      if (q && !orderId && !upstreamOrderNo && !telegramId) {
+        const s = `${o.id || ''} ${o.upstreamOrderNo || ''} ${o.telegramId || ''}`.trim();
+        if (!s.includes(q)) return false;
+      }
+      return true;
+    });
+    matched.sort((a, b) => String(b?.createdAtIso || '').localeCompare(String(a?.createdAtIso || '')));
+    const total = matched.length;
+    const items = matched.slice(offset, offset + limit);
+    return res.json({ success: true, total, items, updatedAt: dateNowIso() });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e?.message || 'server_error' });
+  }
+});
+
+app.get('/api/admin/orders/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ success: false, message: '参数缺失' });
+    if (mongoReady) {
+      const order = await Order.findOne({ id }).lean();
+      if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+      const pay = await Payment.findOne({ id: `pay_${id}` }).lean();
+      const attempts = await PaymentAttempt.find({ orderId: id }).sort({ createdAtIso: -1 }).limit(50).lean();
+      const events = await PaymentEvent.find({ orderId: id }).sort({ atIso: -1 }).limit(200).lean();
+      return res.json({ success: true, order, payment: pay || null, attempts, events, updatedAt: dateNowIso() });
+    }
+
+    const store = loadStore();
+    const order = store.orders?.[id] || null;
+    if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    const pay = store.payments?.[`pay_${id}`] || null;
+    const attempts = Object.values(store.paymentAttempts || {})
+      .filter((x) => String(x?.orderId || '') === id)
+      .sort((a, b) => String(b?.createdAtIso || '').localeCompare(String(a?.createdAtIso || '')))
+      .slice(0, 50);
+    const events = Object.values(store.paymentEvents || {})
+      .filter((x) => String(x?.orderId || '') === id)
+      .sort((a, b) => String(b?.atIso || '').localeCompare(String(a?.atIso || '')))
+      .slice(0, 200);
+    return res.json({ success: true, order, payment: pay, attempts, events, updatedAt: dateNowIso() });
   } catch (e) {
     return res.status(500).json({ success: false, message: e?.message || 'server_error' });
   }
@@ -2194,13 +2356,30 @@ app.post('/api/orders', telegramAuth, async (req, res) => {
       baseAmountFen: quote.baseAmountFen,
       discountFen: quote.discountFen,
       payAmountFen: quote.payAmountFen,
+      expectedAmountFen: quote.payAmountFen,
+      paidAmountFen: 0,
+      currency: 'CNY',
       discountFrom: quote.discountFrom,
       paymentMethod: String(payment_method),
       status: 'created',
       payUrl: '',
       upstreamOrderNo: '',
+      upstreamStatus: '',
+      upstreamStatusUpdatedAtIso: '',
       payCreatedAtIso: '',
       createdAtIso: dateNowIso(),
+      paidAtIso: '',
+      merchantNoSnapshot: '',
+      productIdSnapshot: '',
+      apiUrlSnapshot: '',
+      lastPaymentAttemptId: '',
+      notifyCount: 0,
+      lastNotifyAtIso: '',
+      lastNotifyStatus: '',
+      lastPaymentId: '',
+      failCode: '',
+      failMessage: '',
+      lastError: '',
     };
     if (mongoReady) {
       await Order.create(order);
@@ -2272,6 +2451,8 @@ app.get('/api/order/alipay', async (req, res) => {
     const productId = cfg.payment?.alipay?.productId ? String(cfg.payment.alipay.productId) : String(order.seriesId || '');
     const amountFen = Number(order.payAmountFen || 0) || Math.round(Number(order.amountCny || 0) * 100);
     if (!Number.isFinite(amountFen) || amountFen <= 0) return res.status(400).send('下单金额不合法（需至少 0.01 元）');
+    const expectedAmountFen = Number(order.expectedAmountFen || order.payAmountFen || 0) || amountFen;
+    const paymentAttemptId = newId('pa');
     const params = {
       merchant_no: merchantNo,
       out_order_no: orderId,
@@ -2280,6 +2461,87 @@ app.get('/api/order/alipay', async (req, res) => {
       product_id: productId,
     };
     const sign = generateAlipaySign(params, merchantKey);
+    await appendPaymentEvent({
+      orderId,
+      paymentAttemptId,
+      method: 'alipay',
+      type: 'create_request',
+      amountFen: expectedAmountFen,
+      payload: { ...params, sign },
+    });
+    if (mongoReady) {
+      await PaymentAttempt.create({
+        id: paymentAttemptId,
+        orderId,
+        telegramId: String(order.telegramId || ''),
+        method: 'alipay',
+        status: 'created',
+        expectedAmountFen,
+        paidAmountFen: 0,
+        currency: 'CNY',
+        merchantNo: String(merchantNo),
+        productId: String(productId),
+        apiUrl: apiUrlTrimmed,
+        payUrl: '',
+        upstreamOrderNo: '',
+        signValid: true,
+        handled: false,
+        handleResult: '',
+        createdAtIso: dateNowIso(),
+        updatedAtIso: dateNowIso(),
+      });
+      await Order.updateOne(
+        { id: orderId },
+        {
+          $set: {
+            merchantNoSnapshot: String(merchantNo),
+            productIdSnapshot: String(productId),
+            apiUrlSnapshot: apiUrlTrimmed,
+            lastPaymentAttemptId: paymentAttemptId,
+          },
+        }
+      );
+    } else {
+      const store = loadStore();
+      const prev = store.orders?.[orderId] || order;
+      saveStore({
+        ...store,
+        orders: {
+          ...(store.orders || {}),
+          [orderId]: {
+            ...prev,
+            merchantNoSnapshot: String(merchantNo),
+            productIdSnapshot: String(productId),
+            apiUrlSnapshot: apiUrlTrimmed,
+            lastPaymentAttemptId: paymentAttemptId,
+            expectedAmountFen,
+          },
+        },
+        paymentAttempts: {
+          ...(store.paymentAttempts || {}),
+          [paymentAttemptId]: {
+            id: paymentAttemptId,
+            orderId,
+            telegramId: String(prev.telegramId || ''),
+            method: 'alipay',
+            status: 'created',
+            expectedAmountFen,
+            paidAmountFen: 0,
+            currency: 'CNY',
+            merchantNo: String(merchantNo),
+            productId: String(productId),
+            apiUrl: apiUrlTrimmed,
+            payUrl: '',
+            upstreamOrderNo: '',
+            signValid: true,
+            handled: false,
+            handleResult: '',
+            createdAtIso: dateNowIso(),
+            updatedAtIso: dateNowIso(),
+          },
+        },
+      });
+    }
     const body = new URLSearchParams({ ...params, sign }).toString();
     const resp = await fetch(createUrl, {
       method: 'POST',
@@ -2296,6 +2558,15 @@ app.get('/api/order/alipay', async (req, res) => {
     })();
     if (!resp.ok) {
       const msg = String(json?.message || text || `上游状态码: ${resp.status}`);
+      await appendPaymentEvent({
+        orderId,
+        paymentAttemptId,
+        method: 'alipay',
+        type: 'create_response',
+        httpStatus: resp.status,
+        errorMessage: msg.slice(0, 800),
+        payload: json || { text: String(text || '').slice(0, 2000) },
+      });
       if (msg.includes('已存在')) {
         if (order?.payUrl) return res.redirect(String(order.payUrl));
         return res.status(409).send(`支付宝下单失败：${msg.slice(0, 500)}。请返回重新发起支付获取新订单号。`);
@@ -2304,12 +2575,37 @@ app.get('/api/order/alipay', async (req, res) => {
     }
     if (!json?.success || !json?.result?.url) {
       const msg = json?.message || '缺少支付链接';
+      await appendPaymentEvent({
+        orderId,
+        paymentAttemptId,
+        method: 'alipay',
+        type: 'create_response',
+        httpStatus: resp.status,
+        errorMessage: String(msg).slice(0, 800),
+        payload: json || { text: String(text || '').slice(0, 2000) },
+      });
       return res.status(502).send(`支付宝下单失败：${String(msg).slice(0, 500)}`);
     }
     const payUrl = String(json.result.url || '');
     const upstreamOrderNo = String(json?.result?.orderNo || '');
+    await appendPaymentEvent({
+      orderId,
+      paymentAttemptId,
+      method: 'alipay',
+      type: 'create_response',
+      httpStatus: resp.status,
+      upstreamOrderNo,
+      statusNormalized: 'paying',
+      payload: json,
+    });
     if (mongoReady) {
-      await Order.updateOne({ id: orderId }, { $set: { payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying' } });
+      await PaymentAttempt.updateOne(
+        { id: paymentAttemptId },
+        { $set: { status: 'paying', payUrl, upstreamOrderNo, updatedAtIso: dateNowIso() } }
+      );
+      await Order.updateOne({
+        id: orderId,
+      }, { $set: { payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying', lastPaymentAttemptId: paymentAttemptId } });
     } else {
       const store = loadStore();
       const prev = store.orders?.[orderId] || order;
@@ -2317,7 +2613,19 @@ app.get('/api/order/alipay', async (req, res) => {
         ...store,
         orders: {
           ...(store.orders || {}),
-          [orderId]: { ...prev, payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying' },
+          [orderId]: { ...prev, payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying', lastPaymentAttemptId: paymentAttemptId },
+        },
+        paymentAttempts: {
+          ...(store.paymentAttempts || {}),
+          [paymentAttemptId]: {
+            ...(store.paymentAttempts?.[paymentAttemptId] || {}),
+            id: paymentAttemptId,
+            orderId,
+            status: 'paying',
+            payUrl,
+            upstreamOrderNo,
+            updatedAtIso: dateNowIso(),
+          },
         },
       });
     }
@@ -2350,6 +2658,8 @@ app.get('/api/order/alipay-url', async (req, res) => {
     const productId = cfg.payment?.alipay?.productId ? String(cfg.payment.alipay.productId) : String(order.seriesId || '');
     const amountFen = Number(order.payAmountFen || 0) || Math.round(Number(order.amountCny || 0) * 100);
     if (!Number.isFinite(amountFen) || amountFen <= 0) return res.status(400).json({ success: false, message: '下单金额不合法（需至少 0.01 元）' });
+    const expectedAmountFen = Number(order.expectedAmountFen || order.payAmountFen || 0) || amountFen;
+    const paymentAttemptId = newId('pa');
 
     const params = {
       merchant_no: merchantNo,
@@ -2359,6 +2669,87 @@ app.get('/api/order/alipay-url', async (req, res) => {
       product_id: productId,
     };
     const sign = generateAlipaySign(params, merchantKey);
+    await appendPaymentEvent({
+      orderId,
+      paymentAttemptId,
+      method: 'alipay',
+      type: 'create_request',
+      amountFen: expectedAmountFen,
+      payload: { ...params, sign },
+    });
+    if (mongoReady) {
+      await PaymentAttempt.create({
+        id: paymentAttemptId,
+        orderId,
+        telegramId: String(order.telegramId || ''),
+        method: 'alipay',
+        status: 'created',
+        expectedAmountFen,
+        paidAmountFen: 0,
+        currency: 'CNY',
+        merchantNo: String(merchantNo),
+        productId: String(productId),
+        apiUrl: apiUrlTrimmed,
+        payUrl: '',
+        upstreamOrderNo: '',
+        signValid: true,
+        handled: false,
+        handleResult: '',
+        createdAtIso: dateNowIso(),
+        updatedAtIso: dateNowIso(),
+      });
+      await Order.updateOne(
+        { id: orderId },
+        {
+          $set: {
+            merchantNoSnapshot: String(merchantNo),
+            productIdSnapshot: String(productId),
+            apiUrlSnapshot: apiUrlTrimmed,
+            lastPaymentAttemptId: paymentAttemptId,
+          },
+        }
+      );
+    } else {
+      const store = loadStore();
+      const prev = store.orders?.[orderId] || order;
+      saveStore({
+        ...store,
+        orders: {
+          ...(store.orders || {}),
+          [orderId]: {
+            ...prev,
+            merchantNoSnapshot: String(merchantNo),
+            productIdSnapshot: String(productId),
+            apiUrlSnapshot: apiUrlTrimmed,
+            lastPaymentAttemptId: paymentAttemptId,
+            expectedAmountFen,
+          },
+        },
+        paymentAttempts: {
+          ...(store.paymentAttempts || {}),
+          [paymentAttemptId]: {
+            id: paymentAttemptId,
+            orderId,
+            telegramId: String(prev.telegramId || ''),
+            method: 'alipay',
+            status: 'created',
+            expectedAmountFen,
+            paidAmountFen: 0,
+            currency: 'CNY',
+            merchantNo: String(merchantNo),
+            productId: String(productId),
+            apiUrl: apiUrlTrimmed,
+            payUrl: '',
+            upstreamOrderNo: '',
+            signValid: true,
+            handled: false,
+            handleResult: '',
+            createdAtIso: dateNowIso(),
+            updatedAtIso: dateNowIso(),
+          },
+        },
+      });
+    }
     const body = new URLSearchParams({ ...params, sign }).toString();
     const resp = await fetch(createUrl, {
       method: 'POST',
@@ -2375,6 +2766,15 @@ app.get('/api/order/alipay-url', async (req, res) => {
     })();
     const msg = String(json?.message || text || `上游状态码: ${resp.status}`);
     if (!resp.ok) {
+      await appendPaymentEvent({
+        orderId,
+        paymentAttemptId,
+        method: 'alipay',
+        type: 'create_response',
+        httpStatus: resp.status,
+        errorMessage: msg.slice(0, 800),
+        payload: json || { text: String(text || '').slice(0, 2000) },
+      });
       if (msg.includes('已存在')) {
         if (order?.payUrl) return res.json({ success: true, url: String(order.payUrl), order_id: orderId });
         return res.status(409).json({ success: false, message: `订单号已存在，请返回重新发起支付获取新订单号。`, raw: json || text });
@@ -2382,13 +2782,39 @@ app.get('/api/order/alipay-url', async (req, res) => {
       return res.status(502).json({ success: false, message: msg.slice(0, 500), raw: json || text });
     }
     if (!json?.success || !json?.result?.url) {
+      await appendPaymentEvent({
+        orderId,
+        paymentAttemptId,
+        method: 'alipay',
+        type: 'create_response',
+        httpStatus: resp.status,
+        errorMessage: msg.slice(0, 800),
+        payload: json || { text: String(text || '').slice(0, 2000) },
+      });
       return res.status(502).json({ success: false, message: msg.slice(0, 500), raw: json || text });
     }
 
     const payUrl = String(json.result.url || '');
     const upstreamOrderNo = String(json?.result?.orderNo || '');
+    await appendPaymentEvent({
+      orderId,
+      paymentAttemptId,
+      method: 'alipay',
+      type: 'create_response',
+      httpStatus: resp.status,
+      upstreamOrderNo,
+      statusNormalized: 'paying',
+      payload: json,
+    });
     if (mongoReady) {
-      await Order.updateOne({ id: orderId }, { $set: { payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying' } });
+      await PaymentAttempt.updateOne(
+        { id: paymentAttemptId },
+        { $set: { status: 'paying', payUrl, upstreamOrderNo, updatedAtIso: dateNowIso() } }
+      );
+      await Order.updateOne(
+        { id: orderId },
+        { $set: { payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying', lastPaymentAttemptId: paymentAttemptId } }
+      );
     } else {
       const store = loadStore();
       const prev = store.orders?.[orderId] || order;
@@ -2396,7 +2822,19 @@ app.get('/api/order/alipay-url', async (req, res) => {
         ...store,
         orders: {
           ...(store.orders || {}),
-          [orderId]: { ...prev, payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying' },
+          [orderId]: { ...prev, payUrl, upstreamOrderNo, payCreatedAtIso: dateNowIso(), status: 'paying', lastPaymentAttemptId: paymentAttemptId },
+        },
+        paymentAttempts: {
+          ...(store.paymentAttempts || {}),
+          [paymentAttemptId]: {
+            ...(store.paymentAttempts?.[paymentAttemptId] || {}),
+            id: paymentAttemptId,
+            orderId,
+            status: 'paying',
+            payUrl,
+            upstreamOrderNo,
+            updatedAtIso: dateNowIso(),
+          },
         },
       });
     }
@@ -2464,11 +2902,13 @@ app.get('/api/order/check', async (req, res) => {
     const apiUrlTrimmed = String(apiUrl || '').trim().replace(/\/+$/, '');
     if (!/^https?:\/\//i.test(apiUrlTrimmed)) return res.status(400).json({ success: false, message: '支付宝接口URL不合法' });
     const checkUrl = /\/api\/order\/check$/i.test(apiUrlTrimmed) ? apiUrlTrimmed : `${apiUrlTrimmed}/api/order/check`;
+    const paymentAttemptId = String(order.lastPaymentAttemptId || '');
     const params = {
       merchant_no: merchantNo,
       out_order_no: orderId,
     };
     const sign = generateAlipaySign(params, merchantKey);
+    await appendPaymentEvent({ orderId, paymentAttemptId, method: 'alipay', type: 'check_request', payload: { ...params, sign } });
     const body = new URLSearchParams({ ...params, sign }).toString();
     const resp = await fetch(checkUrl, {
       method: 'POST',
@@ -2485,9 +2925,58 @@ app.get('/api/order/check', async (req, res) => {
     })();
     if (!resp.ok) {
       const msg = json?.message || text || `上游状态码: ${resp.status}`;
+      await appendPaymentEvent({
+        orderId,
+        paymentAttemptId,
+        method: 'alipay',
+        type: 'check_response',
+        httpStatus: resp.status,
+        errorMessage: String(msg).slice(0, 800),
+        payload: json || { text: String(text || '').slice(0, 2000) },
+      });
       return res.status(502).json({ success: false, message: `查单失败：${String(msg).slice(0, 500)}` });
     }
     const status = String(json?.result?.status ?? '');
+    const norm = normalizeGatewayStatus(status);
+    await appendPaymentEvent({
+      orderId,
+      paymentAttemptId,
+      method: 'alipay',
+      type: 'check_response',
+      httpStatus: resp.status,
+      statusRaw: norm.raw,
+      statusNormalized: norm.normalized,
+      payload: json,
+    });
+    if (mongoReady) {
+      await Order.updateOne(
+        { id: orderId },
+        { $set: { upstreamStatus: norm.raw, upstreamStatusUpdatedAtIso: dateNowIso() } }
+      );
+      if (paymentAttemptId) {
+        await PaymentAttempt.updateOne(
+          { id: paymentAttemptId },
+          { $set: { status: norm.normalized || 'paying', updatedAtIso: dateNowIso() } }
+        );
+      }
+    } else {
+      const store = loadStore();
+      const prev = store.orders?.[orderId] || order;
+      const attempt = paymentAttemptId ? store.paymentAttempts?.[paymentAttemptId] : null;
+      saveStore({
+        ...store,
+        orders: {
+          ...(store.orders || {}),
+          [orderId]: { ...prev, upstreamStatus: norm.raw, upstreamStatusUpdatedAtIso: dateNowIso() },
+        },
+        paymentAttempts: paymentAttemptId
+          ? {
+              ...(store.paymentAttempts || {}),
+              [paymentAttemptId]: { ...(attempt || {}), id: paymentAttemptId, orderId, status: norm.normalized || (attempt?.status || 'paying'), updatedAtIso: dateNowIso() },
+            }
+          : (store.paymentAttempts || {}),
+      });
+    }
     return res.json({ success: true, order_id: orderId, status, raw: json, updatedAt: dateNowIso() });
   } catch (e) {
     return res.status(500).json({ success: false, message: e?.message || 'server_error' });
@@ -2500,10 +2989,26 @@ app.post('/api/order/notify', async (req, res) => {
     const merchantKey = cfg.payment?.alipay?.merchantKey || process.env.ALIPAY_MERCHANT_KEY || '';
     if (!merchantKey) return res.status(400).send('配置缺失');
     const params = req.body || {};
-    if (!verifyAlipaySign(params, merchantKey)) return res.status(400).send('签名错误');
-    const outOrderNo = params.out_order_no;
-    const status = params.status;
+    const outOrderNo = String(params.out_order_no || '').trim();
+    const statusRaw = params.status;
+    const upstreamOrderNo = String(params.order_no || params.orderNo || '').trim();
+    const signValid = verifyAlipaySign(params, merchantKey);
     if (!outOrderNo) return res.status(400).send('缺少订单号');
+
+    await appendPaymentEvent({
+      orderId: outOrderNo,
+      paymentAttemptId: '',
+      method: 'alipay',
+      type: 'notify_received',
+      upstreamOrderNo,
+      statusRaw: String(statusRaw ?? ''),
+      statusNormalized: normalizeGatewayStatus(statusRaw).normalized,
+      amountFen: 0,
+      signValid,
+      payload: params,
+    });
+
+    if (!signValid) return res.status(400).send('签名错误');
 
     const order = mongoReady ? await Order.findOne({ id: outOrderNo }).lean() : (() => {
       const store = loadStore();
@@ -2511,40 +3016,207 @@ app.post('/api/order/notify', async (req, res) => {
     })();
     if (!order) return res.status(404).send('订单不存在');
 
+    const expectedAmountFen = Number(order.expectedAmountFen || order.payAmountFen || 0) || 0;
+    const paidAmountFen = parseAmountToFen(params.amount, expectedAmountFen);
+    const statusNorm = normalizeGatewayStatus(statusRaw);
+    const paymentAttemptId = (() => {
+      const s = String(order.lastPaymentAttemptId || '').trim();
+      return s;
+    })();
+
     if (mongoReady) {
       await Payment.updateOne(
         { id: `pay_${outOrderNo}` },
-        { $set: { id: `pay_${outOrderNo}`, orderId: outOrderNo, method: 'alipay', raw: params, updatedAtIso: dateNowIso() } },
+        {
+          $set: {
+            id: `pay_${outOrderNo}`,
+            orderId: outOrderNo,
+            method: 'alipay',
+            outOrderNo,
+            upstreamOrderNo,
+            statusRaw: statusNorm.raw,
+            statusNormalized: statusNorm.normalized,
+            amountFen: paidAmountFen,
+            currency: 'CNY',
+            signValid: true,
+            receivedAtIso: dateNowIso(),
+            raw: params,
+            updatedAtIso: dateNowIso(),
+          },
+        },
         { upsert: true }
       );
+      await Order.updateOne(
+        { id: outOrderNo },
+        {
+          $set: {
+            lastNotifyAtIso: dateNowIso(),
+            lastNotifyStatus: statusNorm.raw,
+            lastPaymentId: `pay_${outOrderNo}`,
+            ...(statusNorm.normalized === 'paid' ? { paidAmountFen, currency: 'CNY' } : {}),
+          },
+          $inc: { notifyCount: 1 },
+        }
+      );
+      if (paymentAttemptId) {
+        await PaymentAttempt.updateOne(
+          { id: paymentAttemptId },
+          {
+            $set: {
+              upstreamOrderNo: upstreamOrderNo || String(order.upstreamOrderNo || ''),
+              status: statusNorm.normalized || 'created',
+              paidAmountFen: statusNorm.normalized === 'paid' ? paidAmountFen : 0,
+              currency: 'CNY',
+              signValid: true,
+              updatedAtIso: dateNowIso(),
+            },
+          }
+        );
+      }
     } else {
       const store = loadStore();
-      let next = store;
-      next.payments = {
-        ...(next.payments || {}),
-        [`pay_${outOrderNo}`]: {
-          id: `pay_${outOrderNo}`,
-          orderId: outOrderNo,
-          method: 'alipay',
-          raw: params,
-          updatedAt: dateNowIso(),
+      const prevOrder = store.orders?.[outOrderNo] || order;
+      const prevAttempt = paymentAttemptId ? store.paymentAttempts?.[paymentAttemptId] : null;
+      saveStore({
+        ...store,
+        payments: {
+          ...(store.payments || {}),
+          [`pay_${outOrderNo}`]: {
+            id: `pay_${outOrderNo}`,
+            orderId: outOrderNo,
+            method: 'alipay',
+            outOrderNo,
+            upstreamOrderNo,
+            statusRaw: statusNorm.raw,
+            statusNormalized: statusNorm.normalized,
+            amountFen: paidAmountFen,
+            currency: 'CNY',
+            signValid: true,
+            receivedAtIso: dateNowIso(),
+            handled: false,
+            handleResult: '',
+            raw: params,
+            updatedAt: dateNowIso(),
+          },
         },
-      };
-      saveStore(next);
+        orders: {
+          ...(store.orders || {}),
+          [outOrderNo]: {
+            ...prevOrder,
+            notifyCount: Number(prevOrder.notifyCount || 0) + 1,
+            lastNotifyAtIso: dateNowIso(),
+            lastNotifyStatus: statusNorm.raw,
+            lastPaymentId: `pay_${outOrderNo}`,
+            ...(statusNorm.normalized === 'paid' ? { paidAmountFen, currency: 'CNY' } : {}),
+          },
+        },
+        paymentAttempts: paymentAttemptId
+          ? {
+              ...(store.paymentAttempts || {}),
+              [paymentAttemptId]: {
+                ...(prevAttempt || {}),
+                id: paymentAttemptId,
+                orderId: outOrderNo,
+                upstreamOrderNo: upstreamOrderNo || String(prevOrder.upstreamOrderNo || ''),
+                status: statusNorm.normalized || (prevAttempt?.status || 'created'),
+                paidAmountFen: statusNorm.normalized === 'paid' ? paidAmountFen : 0,
+                currency: 'CNY',
+                signValid: true,
+                updatedAtIso: dateNowIso(),
+              },
+            }
+          : (store.paymentAttempts || {}),
+      });
     }
 
-    if (status === 'success' || status === 'paid' || status === '2' || status === 2) {
+    if (statusNorm.normalized === 'paid') {
+      if (expectedAmountFen > 0 && paidAmountFen !== expectedAmountFen) {
+        await appendPaymentEvent({
+          orderId: outOrderNo,
+          paymentAttemptId,
+          method: 'alipay',
+          type: 'notify_handled',
+          upstreamOrderNo,
+          statusRaw: statusNorm.raw,
+          statusNormalized: statusNorm.normalized,
+          amountFen: paidAmountFen,
+          signValid: true,
+          errorCode: 'amount_mismatch',
+          errorMessage: `paidAmountFen=${paidAmountFen} expectedAmountFen=${expectedAmountFen}`,
+          payload: { paidAmountFen, expectedAmountFen },
+        });
+        if (mongoReady) {
+          await Order.updateOne(
+            { id: outOrderNo },
+            { $set: { status: 'paid_mismatch', failCode: 'amount_mismatch', failMessage: '回调金额与应付金额不一致' } }
+          );
+          await Payment.updateOne({ id: `pay_${outOrderNo}` }, { $set: { handled: true, handleResult: 'amount_mismatch', updatedAtIso: dateNowIso() } });
+          if (paymentAttemptId) await PaymentAttempt.updateOne({ id: paymentAttemptId }, { $set: { handled: true, handleResult: 'amount_mismatch', updatedAtIso: dateNowIso() } });
+        } else {
+          const store = loadStore();
+          const prev = store.orders?.[outOrderNo] || order;
+          const prevPay = store.payments?.[`pay_${outOrderNo}`] || {};
+          const prevAttempt = paymentAttemptId ? store.paymentAttempts?.[paymentAttemptId] : null;
+          saveStore({
+            ...store,
+            orders: {
+              ...(store.orders || {}),
+              [outOrderNo]: { ...prev, status: 'paid_mismatch', failCode: 'amount_mismatch', failMessage: '回调金额与应付金额不一致', updatedAt: dateNowIso() },
+            },
+            payments: {
+              ...(store.payments || {}),
+              [`pay_${outOrderNo}`]: { ...prevPay, handled: true, handleResult: 'amount_mismatch', updatedAt: dateNowIso() },
+            },
+            paymentAttempts: paymentAttemptId
+              ? { ...(store.paymentAttempts || {}), [paymentAttemptId]: { ...(prevAttempt || {}), handled: true, handleResult: 'amount_mismatch', updatedAtIso: dateNowIso() } }
+              : (store.paymentAttempts || {}),
+          });
+        }
+        return res.send('success');
+      }
+      await appendPaymentEvent({
+        orderId: outOrderNo,
+        paymentAttemptId,
+        method: 'alipay',
+        type: 'notify_handled',
+        upstreamOrderNo,
+        statusRaw: statusNorm.raw,
+        statusNormalized: statusNorm.normalized,
+        amountFen: paidAmountFen,
+        signValid: true,
+        payload: { paidAmountFen, expectedAmountFen },
+      });
       await activateSubscription({ orderId: outOrderNo, telegramId: order.telegramId });
-    } else {
       if (mongoReady) {
-        await Order.updateOne({ id: outOrderNo }, { $set: { status: 'failed' } });
+        await Payment.updateOne({ id: `pay_${outOrderNo}` }, { $set: { handled: true, handleResult: 'ok', updatedAtIso: dateNowIso() } });
+        if (paymentAttemptId) await PaymentAttempt.updateOne({ id: paymentAttemptId }, { $set: { handled: true, handleResult: 'ok', updatedAtIso: dateNowIso() } });
       } else {
         const store = loadStore();
-        const nextOrders = {
-          ...(store.orders || {}),
-          [outOrderNo]: { ...order, status: 'failed', updatedAt: dateNowIso() },
-        };
-        saveStore({ ...store, orders: nextOrders });
+        const prevPay = store.payments?.[`pay_${outOrderNo}`] || {};
+        const prevAttempt = paymentAttemptId ? store.paymentAttempts?.[paymentAttemptId] : null;
+        saveStore({
+          ...store,
+          payments: {
+            ...(store.payments || {}),
+            [`pay_${outOrderNo}`]: { ...prevPay, handled: true, handleResult: 'ok', updatedAt: dateNowIso() },
+          },
+          paymentAttempts: paymentAttemptId
+            ? { ...(store.paymentAttempts || {}), [paymentAttemptId]: { ...(prevAttempt || {}), handled: true, handleResult: 'ok', updatedAtIso: dateNowIso() } }
+            : (store.paymentAttempts || {}),
+        });
+      }
+    } else {
+      if (mongoReady) {
+        if (statusNorm.normalized === 'failed') await Order.updateOne({ id: outOrderNo }, { $set: { status: 'failed', failCode: 'gateway_failed', failMessage: '上游回调失败' } });
+      } else {
+        const store = loadStore();
+        if (statusNorm.normalized === 'failed') {
+          const nextOrders = {
+            ...(store.orders || {}),
+            [outOrderNo]: { ...order, status: 'failed', failCode: 'gateway_failed', failMessage: '上游回调失败', updatedAt: dateNowIso() },
+          };
+          saveStore({ ...store, orders: nextOrders });
+        }
       }
     }
 

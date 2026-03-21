@@ -89,7 +89,7 @@ const AdminAuditLog = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <PageHeader title="操作审计日志" subtitle="用于排查后台关键操作：登录、配置、剧集、封面与迁移等" />
 
       {error ? <AlertBar type="error" message={error} onClose={() => setError('')} /> : null}
@@ -243,4 +243,3 @@ const AdminAuditLog = () => {
 };
 
 export default AdminAuditLog;
-

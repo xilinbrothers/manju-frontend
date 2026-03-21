@@ -500,7 +500,7 @@ const SeriesManagement = ({ onAlert }) => {
 
   const renderList = () => (
     <Card className="overflow-hidden">
-      <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
+      <div className="px-6 py-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="relative w-[360px] max-w-[42vw] min-w-[220px]">
             <input
@@ -547,90 +547,92 @@ const SeriesManagement = ({ onAlert }) => {
         </Button>
       </div>
 
-      <table className="w-full text-left">
-        <thead className="bg-slate-50 text-slate-500 text-xs font-black uppercase tracking-wider">
-          <tr>
-            <th className="px-6 py-4 w-16">ID</th>
-            <th className="px-6 py-4">剧集</th>
-            <th className="px-6 py-4 w-24">状态</th>
-            <th className="px-6 py-4 w-32">更新进度</th>
-            <th className="px-6 py-4 w-28">群组</th>
-            <th className="px-6 py-4 w-44 text-right">操作</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-200">
-          {isLoading && (
+      <div className="w-full overflow-x-auto">
+        <table className="w-full min-w-[860px] text-left">
+          <thead className="bg-slate-50 text-slate-500 text-xs font-black tracking-wide">
             <tr>
-              <td className="px-6 py-6 text-sm text-slate-500 font-semibold" colSpan={6}>正在加载…</td>
+              <th className="px-6 py-3.5 w-16">ID</th>
+              <th className="px-6 py-3.5">剧集</th>
+              <th className="px-6 py-3.5 w-24">状态</th>
+              <th className="px-6 py-3.5 w-32">更新进度</th>
+              <th className="px-6 py-3.5 w-28">群组</th>
+              <th className="px-6 py-3.5 w-44 text-right">操作</th>
             </tr>
-          )}
-          {!isLoading && error && (
-            <tr>
-              <td className="px-6 py-6 text-sm text-rose-700 font-semibold" colSpan={6}>{error}</td>
-            </tr>
-          )}
-          {!isLoading && !error && seriesData.length === 0 && (
-            <tr>
-              <td className="px-6 py-6 text-sm text-slate-500 font-semibold" colSpan={6}>暂无剧集</td>
-            </tr>
-          )}
-          {!isLoading && !error && seriesData.map((item) => (
-            <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-              <td className="px-6 py-4 text-sm font-mono text-slate-400">{item.id}</td>
-              <td className="px-6 py-4">
-                <div className="flex items-center gap-3">
-                  {item.raw?.cover ? (
-                    <img src={item.raw.cover} alt="cover" className="h-10 w-16 rounded-xl object-cover border border-slate-200 bg-slate-100" />
-                  ) : (
-                    <div className="h-10 w-16 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 text-xs font-bold">
-                      Cover
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {isLoading && (
+              <tr>
+                <td className="px-6 py-6 text-sm text-slate-500 font-semibold" colSpan={6}>正在加载…</td>
+              </tr>
+            )}
+            {!isLoading && error && (
+              <tr>
+                <td className="px-6 py-6 text-sm text-rose-700 font-semibold" colSpan={6}>{error}</td>
+              </tr>
+            )}
+            {!isLoading && !error && seriesData.length === 0 && (
+              <tr>
+                <td className="px-6 py-6 text-sm text-slate-500 font-semibold" colSpan={6}>暂无剧集</td>
+              </tr>
+            )}
+            {!isLoading && !error && seriesData.map((item) => (
+              <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-4 text-sm font-mono text-slate-400">{item.id}</td>
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    {item.raw?.cover ? (
+                      <img src={item.raw.cover} alt="cover" className="h-10 w-16 rounded-xl object-cover border border-slate-200 bg-slate-100" />
+                    ) : (
+                      <div className="h-10 w-16 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 text-xs font-bold">
+                        Cover
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-sm font-black text-slate-900 truncate">{item.name}</div>
+                      <div className="text-xs text-slate-500 font-medium truncate">{item.slug}</div>
                     </div>
-                  )}
-                  <div className="min-w-0">
-                    <div className="text-sm font-black text-slate-900 truncate">{item.name}</div>
-                    <div className="text-xs text-slate-500 font-medium truncate">{item.slug}</div>
                   </div>
-                </div>
-              </td>
-              <td className="px-6 py-4">
-                <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-black border ${
-                  item.status === '已完结'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                }`}>
-                  {item.status}
-                </span>
-              </td>
-              <td className="px-6 py-4 text-sm text-slate-700 font-semibold">
-                {item.updated} / {item.total} 集
-              </td>
-              <td className="px-6 py-4">
-                <span className={`text-sm font-bold ${item.groupBound ? 'text-emerald-600' : 'text-slate-400'}`}>
-                  {item.groupBound ? '已绑定' : '未绑定'}
-                </span>
-              </td>
-              <td className="px-6 py-4 text-right">
-                <Button variant="secondary" size="sm" className="mr-2" onClick={() => handleEdit(item)}>编辑</Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={async () => {
-                    if (!confirm('确认删除该剧集？')) return;
-                    try {
-                      await apiFetchJson(`/api/admin/series/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
-                      refresh();
-                    } catch (e) {
-                      onAlert?.('error', e?.message || '删除失败');
-                    }
-                  }}
-                >
-                  删除
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-black border ${
+                    item.status === '已完结'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                  }`}>
+                    {item.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-sm text-slate-700 font-semibold">
+                  {item.updated} / {item.total} 集
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`text-sm font-bold ${item.groupBound ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    {item.groupBound ? '已绑定' : '未绑定'}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <Button variant="secondary" size="sm" className="mr-2" onClick={() => handleEdit(item)}>编辑</Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={async () => {
+                      if (!confirm('确认删除该剧集？')) return;
+                      try {
+                        await apiFetchJson(`/api/admin/series/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+                        refresh();
+                      } catch (e) {
+                        onAlert?.('error', e?.message || '删除失败');
+                      }
+                    }}
+                  >
+                    删除
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Card>
   );
 
@@ -644,7 +646,7 @@ const SeriesManagement = ({ onAlert }) => {
         className="hidden"
         onChange={(e) => onPickSeasonCover(e.target.files?.[0] || null)}
       />
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-7">
       <div className="lg:col-span-2 space-y-6">
         <Card className="p-6 space-y-6">
           <div className="flex items-center justify-between">
@@ -1340,7 +1342,7 @@ const SeriesManagement = ({ onAlert }) => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <PageHeader
         title="剧集管理"
         subtitle="管理剧集信息、绑定群组与基础配置（示例数据）"
