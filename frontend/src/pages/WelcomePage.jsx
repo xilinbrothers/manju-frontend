@@ -9,8 +9,8 @@ const WelcomePage = ({ onNavigate, t }) => {
     <div className="relative min-h-screen bg-[#070A12] text-[var(--app-fg)] pb-24 overflow-hidden">
       <div className="absolute inset-0 pointer-events-none [background:radial-gradient(920px_620px_at_18%_12%,rgba(255,61,219,.30),transparent_62%),radial-gradient(920px_620px_at_82%_10%,rgba(46,233,255,.24),transparent_60%),radial-gradient(980px_760px_at_50%_110%,rgba(124,58,237,.20),transparent_62%),linear-gradient(to_bottom,#070A12,#0B1022)]" />
 
-      <div className="relative flex flex-col min-h-screen px-6 pt-10">
-        <div className="mx-auto w-full max-w-[420px]">
+      <div className="relative px-6 py-10 min-h-[calc(100dvh-96px)] flex items-center justify-center">
+        <div className="w-full max-w-[420px]">
           <div className="rounded-[28px] border border-white/12 bg-white/5 backdrop-blur-xl shadow-[0_24px_80px_rgba(255,61,219,.16),0_18px_60px_rgba(46,233,255,.10),0_14px_36px_rgba(0,0,0,.55)] overflow-hidden">
             <div className="px-6 pt-10 pb-8 text-center">
               <div className="mx-auto h-24 w-24 rounded-full bg-[linear-gradient(135deg,#FF3DDB_0%,#7C3AED_45%,#2EE9FF_100%)] shadow-[0_20px_70px_rgba(255,61,219,.18),0_14px_50px_rgba(46,233,255,.10)] flex items-center justify-center">
